@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/aicayzer-companies-house-mcp-badge.png)](https://mseep.ai/app/aicayzer-companies-house-mcp)
+
 # Companies House MCP Server
 
 ## Features
