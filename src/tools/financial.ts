@@ -31,6 +31,10 @@ registerTool({
         result as unknown as Record<string, unknown>
       );
     } catch (err) {
+      // 404 is normal for companies with no charges
+      if ((err as { statusCode?: number }).statusCode === 404) {
+        return makeTextResult('No charges found for this company.', { items: [], total_count: 0 });
+      }
       return makeErrorResult((err as Error).message);
     }
   },

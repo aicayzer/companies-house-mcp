@@ -175,27 +175,21 @@ registerTool({
         });
       }
 
-      // Insolvency
-      if (p.has_insolvency_history) {
-        flags.push({
-          category: 'Insolvency',
-          severity: 'high',
-          detail: 'Company has insolvency history',
-        });
-      }
-      if (insolvency.status === 'fulfilled' && (insolvency.value.cases?.length ?? 0) > 0) {
-        flags.push({
-          category: 'Insolvency',
-          severity: 'high',
-          detail: `${insolvency.value.cases!.length} insolvency case(s) on record`,
-        });
-      }
-      if (p.has_been_liquidated) {
-        flags.push({
-          category: 'Insolvency',
-          severity: 'high',
-          detail: 'Company has been liquidated',
-        });
+      // Insolvency — consolidate into a single flag to avoid duplication
+      {
+        const insolvencyDetails: string[] = [];
+        if (p.has_insolvency_history) insolvencyDetails.push('has insolvency history');
+        if (insolvency.status === 'fulfilled' && (insolvency.value.cases?.length ?? 0) > 0) {
+          insolvencyDetails.push(`${insolvency.value.cases!.length} case(s) on record`);
+        }
+        if (p.has_been_liquidated) insolvencyDetails.push('has been liquidated');
+        if (insolvencyDetails.length > 0) {
+          flags.push({
+            category: 'Insolvency',
+            severity: 'high',
+            detail: `Company ${insolvencyDetails.join(', ')}`,
+          });
+        }
       }
 
       // Accounts overdue
@@ -381,18 +375,27 @@ registerTool({
       if (!officerId && officerName) {
         const searchResult = await searchOfficers(client, { q: officerName, items_per_page: 5 });
         if (!searchResult.items?.length) {
-          return makeTextResult(`No officers found matching "${officerName}".`, { items: [] });
+          return makeTextResult(
+            `No officers found matching "${officerName}". Try search_officers for alternative spellings.`,
+            { items: [] }
+          );
         }
         const first = searchResult.items[0]!;
         const match = first.links?.self?.match(/\/officers\/([^/]+)/);
         if (!match?.[1]) {
           return makeTextResult(
-            `Found officer "${first.title}" but could not extract officer ID. Results:\n\n${formatOfficerSearchResults(searchResult.items, searchResult.total_results)}`,
+            `Found officer "${first.title}" but could not extract officer ID. Use search_officers to find the officer ID, then call officer_network with officer_id.\n\nResults:\n\n${formatOfficerSearchResults(searchResult.items, searchResult.total_results)}`,
             searchResult as unknown as Record<string, unknown>
           );
         }
         officerId = match[1];
         officerName = first.title;
+
+        // Warn if multiple results — user may want a different officer
+        if (searchResult.total_results > 1) {
+          // We'll prepend a note to the output later
+          officerName = `${first.title} (note: ${searchResult.total_results} officers matched "${input.officer_name}" — using first result. Use search_officers + officer_id for precision)`;
+        }
       }
 
       const appointments = await getOfficerAppointments(client, officerId!, { items_per_page: 100 });
@@ -412,6 +415,8 @@ registerTool({
       if (active.length > 0) {
         lines.push('### Current Appointments\n');
         lines.push(formatAppointments(active, active.length));
+      } else {
+        lines.push('### Current Appointments\nNo current appointments.\n');
       }
 
       if (resigned.length > 0) {

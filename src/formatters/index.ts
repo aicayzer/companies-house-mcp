@@ -166,15 +166,20 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
   }
 
   if (profile.accounts) {
-    lines.push('', '### Accounts');
-    if (profile.accounts.last_accounts?.made_up_to) {
-      lines.push(`- Last accounts made up to: ${formatDate(profile.accounts.last_accounts.made_up_to)}`);
-    }
-    if (profile.accounts.next_accounts?.due_on) {
-      lines.push(`- Next accounts due: ${formatDate(profile.accounts.next_accounts.due_on)}`);
-    }
-    if (profile.accounts.overdue || profile.accounts.next_accounts?.overdue) {
-      lines.push('- **ACCOUNTS OVERDUE**');
+    const hasAccountsData = profile.accounts.last_accounts?.made_up_to ||
+      profile.accounts.next_accounts?.due_on ||
+      profile.accounts.overdue || profile.accounts.next_accounts?.overdue;
+    if (hasAccountsData) {
+      lines.push('', '### Accounts');
+      if (profile.accounts.last_accounts?.made_up_to) {
+        lines.push(`- Last accounts made up to: ${formatDate(profile.accounts.last_accounts.made_up_to)}`);
+      }
+      if (profile.accounts.next_accounts?.due_on) {
+        lines.push(`- Next accounts due: ${formatDate(profile.accounts.next_accounts.due_on)}`);
+      }
+      if (profile.accounts.overdue || profile.accounts.next_accounts?.overdue) {
+        lines.push('- **ACCOUNTS OVERDUE**');
+      }
     }
   }
 
@@ -215,7 +220,8 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
 
 export function formatCompanySearchResults(items: CompanySearchItem[], total: number): string {
   if (!items.length) return 'No companies found.';
-  const lines = [`Found ${total} companies:\n`];
+  const showing = items.length < total ? `Showing ${items.length} of ${total}` : `Found ${total}`;
+  const lines = [`${showing} companies:\n`];
   for (const item of items) {
     lines.push(`### ${item.title}`);
     lines.push(`- **Number:** ${item.company_number}`);
@@ -343,7 +349,9 @@ export function formatOfficerSearchResults(items: OfficerSearchItem[], total: nu
   for (const item of items) {
     lines.push(`### ${item.title}`);
     if (item.date_of_birth) {
-      lines.push(`- **DOB:** ${item.date_of_birth.month}/${item.date_of_birth.year}`);
+      const dob = item.date_of_birth;
+      const dobStr = dob.day ? `${dob.day}/${dob.month}/${dob.year}` : `${dob.month}/${dob.year}`;
+      lines.push(`- **DOB:** ${dobStr}`);
     }
     if (item.appointment_count !== undefined) {
       lines.push(`- **Appointments:** ${item.appointment_count}`);
