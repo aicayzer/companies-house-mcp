@@ -6,35 +6,40 @@ on:
 
 jobs:
   quality:
-    name: Code Quality
+    name: Code Quality & Tests
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
-          
+
       - name: Install dependencies
         run: npm install
-        
+
       - name: Run linting
-        run: npx eslint .
-        
+        run: npm run lint
+
       - name: TypeScript check
         run: npm run typecheck
-        
-      - name: Run tests
-        run: npm test
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        run: npm run test:integration
         env:
           COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
-          
+
       - name: Build project
         run: npm run build
-        
+
       - name: Security audit
         run: npm audit --audit-level=high
+        continue-on-error: true

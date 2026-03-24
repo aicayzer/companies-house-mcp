@@ -1,24 +1,24 @@
 {
   "name": "companies-house-mcp",
-  "version": "1.0.1",
-  "description": "Model Context Protocol server for UK Companies House API",
+  "version": "2.0.0-alpha.1",
+  "description": "MCP server and CLI for UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/server/index.js",
   "bin": {
-    "companies-house-mcp": "dist/index.js"
+    "companies-house-mcp": "dist/server/index.js",
+    "ch": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "dev": "npm run build && node dist/index.js",
-    "dev:env": "set -a && source .env && set +a && npm run dev",
-    "start": "node dist/index.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:integration": "jest tests/integration/",
-    "test:unit": "jest tests/unit/",
-    "test:all": "npm run test:unit && npm run test:integration",
+    "dev": "npm run build && node dist/server/index.js",
+    "start": "node dist/server/index.js",
+    "start:http": "node dist/server/index.js --http",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:unit": "vitest run tests/unit/",
+    "test:integration": "vitest run tests/integration/",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write src/ tests/",
@@ -33,7 +33,9 @@
     "companies-house",
     "uk-companies",
     "api",
-    "typescript"
+    "typescript",
+    "cli",
+    "due-diligence"
   ],
   "author": "Companies House MCP Contributors",
   "license": "MIT",
@@ -46,28 +48,26 @@
     "url": "https://github.com/aicayzer/companies-house-mcp/issues"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "commander": "^14.0.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "zod": "^3.25.50"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
-    "@types/jest": "^29.5.14",
     "@types/node": "^22.15.29",
     "@typescript-eslint/eslint-plugin": "^8.33.1",
     "@typescript-eslint/parser": "^8.33.1",
     "eslint": "^9.28.0",
     "globals": "^14.0.0",
-    "jest": "^29.7.0",
     "prettier": "^3.5.3",
-    "ts-jest": "^29.3.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
   },
   "files": [
     "dist/",
+    ".claude/skills/",
     "README.md",
     "LICENSE",
     "package.json"

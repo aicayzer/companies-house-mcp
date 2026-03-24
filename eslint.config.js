@@ -18,7 +18,6 @@ export default [
       sourceType: 'module',
       globals: {
         ...globals.node,
-        ...globals.jest
       },
       parser: await import('@typescript-eslint/parser')
     },
@@ -30,4 +29,4 @@ export default [
       'no-undef': 'off'
     }
   }
-]; 
+];
