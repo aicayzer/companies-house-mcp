@@ -1,124 +1,141 @@
 ---
 name: companies-house
-description: Research UK companies using Companies House data. Use when asked about UK company details, directors, ownership, filings, due diligence, or corporate structure.
+description: Research UK companies using Companies House data. Use when the user asks about UK companies, directors, ownership, filings, due diligence, or company searches.
 ---
 
-# UK Companies House Research
+You have access to the `companies-house` MCP server, which provides tools for querying the UK Companies House API. Use this skill to help users research UK companies, officers, ownership, and corporate history.
 
-You have access to the `companies-house` MCP server with 17 tools for UK company research. Here's how to use them effectively.
+## Workflow
 
-## Quick Start
+**Start broad, go deep:**
 
-For most research tasks, start with one of these:
+1. **Find the company** — Use `search_companies` to find the company number. UK company numbers are 8 digits, zero-padded (e.g., `00445790`). Scottish companies start with `SC`, Northern Irish with `NI`, LLPs with `OC`.
 
-- **Know the company name?** → `search_companies` first, then `company_report` with the number
-- **Want a full picture?** → `company_report` (fetches profile + officers + PSCs + charges + filings + insolvency in one call)
-- **Checking if a company is safe to deal with?** → `due_diligence_check` (automated red-flag scan)
-- **Investigating a director?** → `search_officers` then `officer_network`
+2. **Get the overview** — Use `company_report` for a comprehensive view in one call. This returns profile, officers, PSCs, charges, filings, and insolvency status. This is the best starting point for most requests.
 
-## Company Numbers
+3. **Go deeper as needed:**
+   - Ownership questions → `get_ownership`
+   - Officer history → `get_appointments` (with officer ID from officers list)
+   - Director network → `officer_network` (finds all companies a person directs)
+   - Financial health → `due_diligence_check` (automated red-flag scanner)
+   - Specific filings → `get_filings` with category filter
+   - Charges detail → `get_charges`
 
-UK company numbers are 8 characters. Format matters:
-- **England/Wales:** 8 digits, zero-padded (e.g., `00445790` for Tesco)
-- **Scotland:** `SC` prefix + 6 digits (e.g., `SC421617`)
-- **Northern Ireland:** `NI` prefix + 6 digits
-- **LLP:** `OC` prefix + 6 digits (e.g., `OC303480`)
-- **Overseas:** `FC` prefix + 6 digits
+## Available Tools
 
-Always use the full format including leading zeros.
-
-## Tool Reference
-
-### Core Tools
 | Tool | Use When |
 |------|----------|
-| `search_companies` | Finding a company by name. Supports filters: status, type, SIC code, location, incorporation date |
-| `search_officers` | Finding a person across all companies. Returns officer IDs for deeper investigation |
-| `get_company_profile` | Getting full details: status, type, address, SIC codes, accounts dates |
-| `get_officers` | Listing directors/secretaries. Default: active only. Use `include_resigned: true` for all |
-| `get_appointments` | All companies where a specific officer holds/held positions |
-| `get_ownership` | PSCs — who owns/controls the company. Shows ownership percentages and voting rights |
-| `get_filings` | Filing history. Use `category` to filter (accounts, officers, mortgage, etc.) |
-| `get_charges` | Mortgages and debentures. Outstanding charges = active security interests |
-| `get_insolvency` | Insolvency proceedings, practitioners, dates |
-| `get_company_registers` | Where statutory registers are held |
+| `search_companies` | Finding a company by name. Supports filters: status, type, SIC code, location, incorporation date. |
+| `search_officers` | Finding a person across all companies. Returns officer IDs for deeper queries. |
+| `get_company_profile` | Getting detailed profile for a known company number. |
+| `get_officers` | Listing directors/secretaries. Use `include_resigned: true` for full history. |
+| `get_appointments` | Seeing all companies an officer is/was associated with. Needs officer ID. |
+| `get_ownership` | PSCs — who owns/controls the company. Individual, corporate, and legal person PSCs. |
+| `get_filings` | Filing history. Filter by category: accounts, officers, mortgage, capital, etc. |
+| `get_charges` | Mortgages/debentures. Outstanding vs satisfied charges. |
+| `get_insolvency` | Insolvency cases, practitioners, proceedings. |
+| `company_report` | **Recommended starting point.** One call returns profile + officers + PSCs + charges + filings + insolvency. |
+| `due_diligence_check` | Automated red-flag scan. Checks status, accounts, confirmation statement, charges, insolvency, officers, PSCs. |
+| `officer_network` | Map all appointments for an officer. Takes name or officer ID. |
+| `get_company_registers` | Where the company keeps its statutory registers. |
+| `get_exemptions` | Company exemptions (rare). |
+| `get_uk_establishments` | UK branches of overseas companies. |
+| `get_officer_disqualifications` | Check if someone is disqualified from being a director. |
+| `get_filing_document` | Metadata for a specific filing (needs transaction ID from `get_filings`). |
 
-### Composite Tools (Use These First)
-| Tool | Use When |
-|------|----------|
-| `company_report` | **Start here for any company research.** One call gets everything: profile, officers, PSCs, charges, filings, insolvency |
-| `due_diligence_check` | Automated red-flag scan. Checks: status, insolvency, overdue accounts, charges, officer issues |
-| `officer_network` | Mapping a director's connections across companies. Takes name or officer ID |
+## Company Number Formats
 
-### Extended Tools
-| Tool | Use When |
-|------|----------|
-| `get_exemptions` | Checking filing exemptions (most companies have none) |
-| `get_uk_establishments` | Finding UK branches of overseas companies |
-| `get_officer_disqualifications` | Checking if an officer is disqualified from acting as director |
-| `get_filing_document` | Getting details of a specific filing by transaction ID |
+- **Standard:** 8-digit, zero-padded: `00445790`, `13861484`
+- **Scotland:** `SC` prefix: `SC123456`
+- **Northern Ireland:** `NI` prefix: `NI012345`
+- **LLP:** `OC` prefix: `OC301234`
+- **Overseas:** `FC` prefix: `FC012345`
+- **SE:** `SE` prefix (European companies)
 
-## Recommended Workflows
+Always pad numbers to 8 digits when needed (e.g., `445790` → `00445790`).
 
-### "Tell me about company X"
-1. `search_companies` with the name → get company number
-2. `company_report` with the number → full picture
+## Company Statuses
 
-### "Is this company safe to deal with?"
-1. `due_diligence_check` with company number → risk assessment
-2. If flags found, investigate with specific tools
+| Status | Meaning |
+|--------|---------|
+| `active` | Trading normally |
+| `dissolved` | No longer exists — removed from register |
+| `liquidation` | Being wound up — assets being sold |
+| `receivership` | Under control of a receiver |
+| `administration` | Under protection from creditors, restructuring |
+| `voluntary-arrangement` | Reached agreement with creditors |
+| `converted-closed` | Converted to another type or closed |
+| `insolvency-proceedings` | Insolvency proceedings active |
 
-### "Who runs this company and what else do they do?"
-1. `get_officers` for the company
-2. `search_officers` or `officer_network` for each director of interest
-3. Cross-reference companies they're connected to
+## SIC Codes (Common)
 
-### "Who owns this company?"
-1. `get_ownership` → PSCs with control percentages
-2. If corporate PSC, search for that company too (follow the chain)
-
-## Interpreting Data
-
-### Company Status
-- **Active** — trading normally
-- **Dissolved** — no longer exists (struck off register)
-- **Liquidation** — being wound up
-- **Administration** — under administrator control
-- **Voluntary Arrangement** — CVA or IVA in place
-
-### SIC Codes (Common)
-- `62011` — Computer programming
-- `62012` — Business/management consultancy (computer)
-- `62020` — IT consultancy
-- `70100` — Head office activities
-- `70229` — Management consultancy (other)
+- `62011` — Computer programming activities
+- `62012` — Business and domestic software development
+- `62020` — IT consultancy activities
+- `62090` — Other IT activities
+- `70229` — Management consultancy activities
 - `64110` — Central banking
 - `64191` — Banks
-- `82990` — Other business support
+- `64205` — Financial holding companies
+- `68100` — Buying/selling of own real estate
+- `68209` — Other letting of own property
+- `82990` — Other business support activities
+- `47910` — Retail via internet
+- `56101` — Licensed restaurants
 
-### Accounts
-- **Overdue accounts** = company hasn't filed on time. Red flag.
-- **Accounting reference date** = financial year end
-- Companies must file within 9 months (private) or 6 months (public) of year end
+## Filing Categories
 
-### Confirmation Statement
-- Annual filing confirming company details are correct
-- **Overdue** = company may face strike-off proceedings
+Use with `get_filings` category parameter:
+- `accounts` — Annual accounts
+- `annual-return` — Annual returns (pre-2016)
+- `confirmation-statement` — Confirmation statements (post-2016)
+- `officers` — Director/secretary appointments, resignations, changes
+- `mortgage` — Charge registrations and satisfactions
+- `capital` — Share allotments, capital changes
+- `incorporation` — Formation documents
+- `change-of-name` — Name change certificates
+- `liquidation` — Winding up documents
+- `resolution` — Shareholder resolutions
+- `miscellaneous` — Everything else
 
-### Charges
-- **Outstanding** = active security interest (e.g., bank has a charge over assets)
-- **Satisfied** = debt paid off, charge released
-- Many charges are normal for trading companies (bank facilities)
+## Due Diligence Interpretation
 
-### PSC Natures of Control
-- **25-50%** — significant but not majority
-- **50-75%** — majority control
-- **75-100%** — supermajority (can pass special resolutions)
-- **Right to appoint/remove directors** — governance control even without share ownership
+When `due_diligence_check` returns flags:
+
+**High severity — investigate further:**
+- Company dissolved/in liquidation/in administration
+- Insolvency history or active proceedings
+- Accounts overdue (company may be non-compliant)
+- No active officers
+
+**Medium severity — worth noting:**
+- Outstanding charges (normal for companies with bank lending)
+- Confirmation statement overdue
+- Officers recently resigned
+- Registered office undeliverable or in dispute
+- No PSCs registered for an active company
+
+**Low severity — informational:**
+- Company less than one year old
+- Sole director (common for small companies)
+
+## Natures of Control (PSC)
+
+PSCs must register if they hold:
+- **25-50%** of shares or voting rights
+- **50-75%** of shares or voting rights
+- **75-100%** of shares or voting rights
+- **Right to appoint/remove directors**
+- **Significant influence or control**
+
+These can be held directly, in trust, or as a firm.
 
 ## Tips
-- The API returns 404 for valid companies with no data for certain endpoints (insolvency, charges) — this is normal, not an error
-- Company numbers must be exact. If search returns nothing, try variations or check for typos
-- For dissolved companies, historical data is still available
-- PSC data was introduced in 2016 — older companies may have incomplete records
-- Use `$ARGUMENTS` as the company name or number for quick lookups
+
+- Company numbers are case-insensitive but always return uppercase from the API.
+- The API returns dates as `YYYY-MM-DD` strings.
+- `get_officers` returns active only by default. Use `include_resigned: true` for full history.
+- PSC data may not be available for older companies or companies registered before the PSC regime (2016).
+- Some endpoints return 404 for valid companies that simply don't have the relevant data (e.g., insolvency for a healthy company). This is normal, not an error.
+- Officer IDs are embedded in `links.self` paths: `/officers/{OFFICER_ID}/appointments`.
+- For large companies (e.g., Tesco), officer lists can be very long. Use pagination.
