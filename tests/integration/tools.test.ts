@@ -124,7 +124,7 @@ describeIntegration('Integration: Tools against real API', () => {
   it('get_company_profile handles invalid company number', async () => {
     const tool = getTool('get_company_profile')!;
     const result = await tool.execute(client, { company_number: 'INVALID' });
-    expect(result.isError).toBeFalsy(); // Returns error text, not thrown
+    expect(result.isError).toBeTruthy();
     expect(result.content[0]!.text).toContain('Error');
   });
 });
