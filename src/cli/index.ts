@@ -2,6 +2,7 @@
 
 import { APIClient } from '../api/client.js';
 import { getTool, getAllTools } from '../tools/registry.js';
+import { resolveApiKey, writeApiKey, getConfigPath } from '../config.js';
 
 // Import all tools to trigger registration
 import '../tools/search.js';
@@ -13,16 +14,20 @@ import '../tools/financial.js';
 import '../tools/extended.js';
 import '../tools/composite.js';
 
-function getClient(): APIClient {
-  const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
-  if (!apiKey) {
+function getClient(keyFlag?: string): APIClient {
+  const resolved = resolveApiKey(keyFlag);
+  if (!resolved) {
     console.error(
-      'Error: COMPANIES_HOUSE_API_KEY environment variable is required.\n' +
-        'Get an API key at https://developer.company-information.service.gov.uk/'
+      'Error: No API key found.\n\n' +
+        'Set one using any of these methods (highest priority first):\n' +
+        '  1. --key flag:    ch profile 00445790 --key <key>\n' +
+        '  2. Env var:       export COMPANIES_HOUSE_API_KEY=<key>\n' +
+        '  3. Config file:   ch config set-key <key>\n\n' +
+        'Get a free API key at https://developer.company-information.service.gov.uk/'
     );
     process.exit(1);
   }
-  return new APIClient({ api_key: apiKey });
+  return new APIClient({ api_key: resolved.key });
 }
 
 interface CommandDef {
@@ -131,16 +136,23 @@ function printUsage(): void {
   for (const cmd of COMMANDS) {
     console.log(`  ${cmd.name.padEnd(maxLen + 2)} ${cmd.description}`);
   }
+  console.log(`  ${'config'.padEnd(maxLen + 2)} Manage configuration (set-key, show)`);
   console.log('\nFlags:');
+  console.log('  --key     API key (overrides env var and config file)');
   console.log('  --json    Output raw JSON (pipe-friendly)');
   console.log('  --help    Show this help message');
+  console.log('\nAPI Key (checked in this order):');
+  console.log('  1. --key flag');
+  console.log('  2. COMPANIES_HOUSE_API_KEY env var');
+  console.log('  3. ~/.config/companies-house/config.json');
   console.log('\nExamples:');
   console.log('  ch search "Anthropic"');
-  console.log('  ch report 13861484');
-  console.log('  ch check 13861484');
-  console.log('  ch officers 13861484 --all');
+  console.log('  ch report 14604577');
+  console.log('  ch check 14604577');
+  console.log('  ch officers 14604577 --all');
   console.log('  ch network "John Smith"');
   console.log('  ch search "tech" --status active --sic 62011 --json');
+  console.log('  ch config set-key cbcf30a4-d379-4f28-b3fe-3b9da25217b6');
 }
 
 function parseArgs(args: string[], cmdDef: CommandDef): Record<string, unknown> {
@@ -153,8 +165,8 @@ function parseArgs(args: string[], cmdDef: CommandDef): Record<string, unknown> 
   while (i < args.length) {
     const arg = args[i]!;
 
-    if (arg === '--json') {
-      i++;
+    if (arg === '--json' || arg === '--key') {
+      i += arg === '--key' ? 2 : 1; // --key consumes its value
       continue; // handled separately
     }
 
@@ -188,6 +200,39 @@ function parseArgs(args: string[], cmdDef: CommandDef): Record<string, unknown> 
   return params;
 }
 
+function handleConfigCommand(args: string[]): void {
+  const subcommand = args[0];
+
+  if (subcommand === 'set-key') {
+    const key = args[1];
+    if (!key) {
+      console.error('Usage: ch config set-key <api-key>');
+      process.exit(1);
+    }
+    writeApiKey(key);
+    console.log(`API key saved to ${getConfigPath()}`);
+    return;
+  }
+
+  if (subcommand === 'show') {
+    const resolved = resolveApiKey();
+    if (!resolved) {
+      console.log('No API key configured.');
+      console.log(`\nConfig file: ${getConfigPath()}`);
+    } else {
+      const masked = resolved.key.slice(0, 4) + '...' + resolved.key.slice(-4);
+      console.log(`API key:  ${masked}`);
+      console.log(`Source:   ${resolved.source === 'env' ? 'COMPANIES_HOUSE_API_KEY env var' : resolved.source === 'config' ? getConfigPath() : 'flag'}`);
+    }
+    return;
+  }
+
+  console.log('Usage: ch config <subcommand>\n');
+  console.log('Subcommands:');
+  console.log('  set-key <key>   Save API key to config file');
+  console.log('  show            Show current API key source');
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -202,6 +247,20 @@ async function main(): Promise<void> {
     process.argv = [process.argv[0]!, process.argv[1]!, ...serverArgs];
     await import('../server/index.js');
     return;
+  }
+
+  // Handle "config" command
+  if (args[0] === 'config') {
+    handleConfigCommand(args.slice(1));
+    return;
+  }
+
+  // Extract global --key flag
+  const keyIdx = args.indexOf('--key');
+  const keyFlag = keyIdx !== -1 ? args[keyIdx + 1] : undefined;
+  if (keyIdx !== -1 && !keyFlag) {
+    console.error('Error: --key requires a value');
+    process.exit(1);
   }
 
   const commandName = args[0]!;
@@ -231,7 +290,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const client = getClient();
+  const client = getClient(keyFlag);
 
   try {
     const result = await tool.execute(client, params);

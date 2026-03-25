@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { APIClient } from '../api/client.js';
 import { getAllTools } from '../tools/registry.js';
+import { resolveApiKey } from '../config.js';
 
 // Import all tool modules to trigger registration
 import '../tools/search.js';
@@ -16,15 +17,18 @@ import '../tools/extended.js';
 import '../tools/composite.js';
 
 function getApiKey(): string {
-  const key = process.env.COMPANIES_HOUSE_API_KEY;
-  if (!key) {
+  const resolved = resolveApiKey();
+  if (!resolved) {
     console.error(
-      'Error: COMPANIES_HOUSE_API_KEY environment variable is required.\n' +
-        'Get an API key at https://developer.company-information.service.gov.uk/'
+      'Error: No API key found.\n\n' +
+        'Set one using either:\n' +
+        '  1. COMPANIES_HOUSE_API_KEY env var (in MCP config or shell)\n' +
+        '  2. Config file: run "ch config set-key <key>"\n\n' +
+        'Get a free API key at https://developer.company-information.service.gov.uk/'
     );
     process.exit(1);
   }
-  return key;
+  return resolved.key;
 }
 
 async function main(): Promise<void> {
