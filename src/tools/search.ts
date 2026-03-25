@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { registerTool, TOOL_ANNOTATIONS, makeTextResult, makeErrorResult } from './registry.js';
 import { searchCompanies, advancedSearchCompanies, searchOfficers } from '../api/endpoints/search.js';
-import { formatCompanySearchResults, formatOfficerSearchResults } from '../formatters/index.js';
+import { formatCompanySearchResults, formatOfficerSearchResults, formatAddress } from '../formatters/index.js';
 import type { APIClient } from '../api/client.js';
+import type { CompanySearchResponse } from '../types/index.js';
 
 // ── search_companies ────────────────────────────────────────────────────
 const searchCompaniesShape = {
@@ -32,7 +33,9 @@ registerTool({
 
     try {
       if (hasAdvancedFilters) {
-        const result = await advancedSearchCompanies(client, {
+        // Advanced search returns different field names than basic search.
+        // Normalise to match CompanySearchResponse/CompanySearchItem shape.
+        const raw = await advancedSearchCompanies(client, {
           company_name_includes: input.query,
           company_status: input.company_status,
           company_type: input.company_type,
@@ -43,9 +46,20 @@ registerTool({
           items_per_page: input.items_per_page,
           start_index: input.start_index,
         });
+        const rawAny = raw as unknown as Record<string, unknown>;
+        const totalResults = (rawAny.hits as number | undefined) ?? raw.total_results ?? 0;
+        const items = (raw.items ?? []).map((item) => {
+          const itemAny = item as unknown as Record<string, unknown>;
+          return {
+            ...item,
+            title: item.title || (itemAny.company_name as string) || 'Unknown',
+            address_snippet: item.address_snippet || formatAddress(itemAny.registered_office_address as Record<string, string> | undefined),
+          };
+        });
+        const result: CompanySearchResponse = { ...raw, items, total_results: totalResults };
         return makeTextResult(
-          formatCompanySearchResults(result.items ?? [], result.total_results ?? 0),
-          result as unknown as Record<string, unknown>
+          formatCompanySearchResults(result.items, result.total_results),
+          rawAny
         );
       }
 
