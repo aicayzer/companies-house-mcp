@@ -130,6 +130,131 @@ PSCs must register if they hold:
 
 These can be held directly, in trust, or as a firm.
 
+## Visual Output
+
+When the data warrants it and the user's context supports Mermaid rendering (Claude.ai, Claude Desktop, Obsidian, GitHub), generate diagrams from the structured data. Do not generate diagrams in terminal-only contexts (Claude Code CLI, Cursor) — describe the structure in text instead.
+
+**Only generate a diagram when it adds clarity the text alone doesn't provide.** A single PSC doesn't need a flowchart. A company with one director doesn't need a network graph. Use diagrams for relationships, timelines, and comparisons — not for restating what the text already says clearly.
+
+Use `<br/>` for line breaks in Mermaid node labels — never `\n`.
+
+### Ownership Flowcharts
+
+Generate from `get_ownership` data when there are **2+ active PSCs** or **corporate PSCs** (layered ownership).
+
+**Default: top-down, colour-coded by PSC type.**
+
+```
+graph TD
+    C["Company Name<br/>Company Number | Status"]
+
+    P1["Corporate PSC Name<br/>(Corporate PSC)"]
+    P2["Individual Name<br/>(Individual)"]
+
+    P1 -->|"25-50% shares<br/>25-50% votes"| C
+    P2 -->|"75-100% shares"| C
+
+    style C fill:#1e3a5f,color:#fff,stroke:#0d253f
+    style P1 fill:#7c3aed,color:#fff,stroke:#5b21b6
+    style P2 fill:#0d9488,color:#fff,stroke:#0f766e
+```
+
+Colours: dark blue for the target company, purple for corporate PSCs, teal for individual PSCs.
+
+**When the user asks about ownership changes or history**, show ceased PSCs with dashed lines and grey styling:
+
+```
+    X1["Former Owner<br/>Ceased Dec 2023"]:::ceased
+    X1 -.->|"formerly 25-50%"| C
+    classDef ceased fill:#94a3b8,color:#fff,stroke:#64748b,stroke-dasharray: 5 5
+```
+
+**When there are 5+ PSCs**, use left-to-right layout (`graph LR`) to avoid a tall narrow diagram.
+
+### Officer Network Graphs
+
+Generate from `officer_network` data when an officer has **2+ appointments**.
+
+**Default: left-to-right, colour-coded by company status.**
+
+```
+graph LR
+    O["Officer Name"]
+
+    C1["Company Name<br/>Company Number"]
+    C2["Dissolved Company<br/>Company Number"]:::dissolved
+
+    O -->|"Director<br/>(active)"| C1
+    O -->|"Director<br/>(resigned)"| C2
+
+    style O fill:#1e40af,color:#fff,stroke:#1e3a8a
+    style C1 fill:#059669,color:#fff,stroke:#047857
+    classDef dissolved fill:#dc2626,color:#fff,stroke:#b91c1c
+```
+
+Colours: blue for the officer, green for active companies, red for dissolved companies.
+
+**Cap at 15 companies.** If there are more, show active appointments only and note "N additional resigned appointments not shown."
+
+### Filing Timelines
+
+Generate from `get_filings` and `get_officers` data when the user asks about company history, lifecycle, or "what happened with this company."
+
+**Default: sectioned by era, curated key events only.**
+
+```
+timeline
+    title Company Name — Key Events
+    section Formation
+        Month Year : Incorporated
+    section Growth
+        Month Year : Key event description
+    section Recent
+        Month Year : Key event description
+```
+
+**Curate, don't dump.** Select: incorporation, significant officer changes, status changes, charges, insolvency events, and major filings. Skip routine annual accounts and confirmation statements unless they're overdue or the only activity.
+
+### Officer Tenure (Gantt Charts)
+
+Generate from `get_officers` (with `include_resigned: true`) when the user asks about board history, director tenure, or "who was there when."
+
+**Default: full board history, grouped by status.**
+
+```
+gantt
+    title Company Name — Director Tenure
+    dateFormat YYYY-MM-DD
+    axisFormat %Y
+
+    section Active
+        Director Name :active, start-date, end-date
+
+    section Resigned
+        Former Director :done, start-date, end-date
+```
+
+Use `active` for current officers, `done` for resigned. For active officers, use today's date as the end date.
+
+**For companies with 15+ officers**, offer a simplified view showing only current officers and key historical figures (founders, long-serving directors).
+
+### Charge Lifecycle (Gantt Charts)
+
+Generate from `get_charges` data when a company has **both outstanding and satisfied charges**, or when the user asks about charge history.
+
+```
+gantt
+    title Company Name — Charges
+    dateFormat YYYY-MM-DD
+    axisFormat %Y
+
+    section Outstanding
+        Charge Description :active, created-date, today
+
+    section Satisfied
+        Charge Description :done, created-date, satisfied-date
+```
+
 ## Tips
 
 - Company numbers are case-insensitive but always return uppercase from the API.
