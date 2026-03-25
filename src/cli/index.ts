@@ -3,6 +3,7 @@
 import { APIClient } from '../api/client.js';
 import { getTool, getAllTools } from '../tools/registry.js';
 import { resolveApiKey, writeApiKey, getConfigPath } from '../config.js';
+import { markdownToTerminal } from './terminal-format.js';
 
 // Import all tools to trigger registration
 import '../tools/search.js';
@@ -137,9 +138,12 @@ function printUsage(): void {
     console.log(`  ${cmd.name.padEnd(maxLen + 2)} ${cmd.description}`);
   }
   console.log(`  ${'config'.padEnd(maxLen + 2)} Manage configuration (set-key, show)`);
+  console.log('\nOutput:');
+  console.log('  (default) Clean terminal formatting with colour');
+  console.log('  --md      Markdown output (for notes, docs, piping to files)');
+  console.log('  --json    Raw JSON (pipe-friendly, for scripting)');
   console.log('\nFlags:');
   console.log('  --key     API key (overrides env var and config file)');
-  console.log('  --json    Output raw JSON (pipe-friendly)');
   console.log('  --help    Show this help message');
   console.log('\nAPI Key (checked in this order):');
   console.log('  1. --key flag');
@@ -165,7 +169,7 @@ function parseArgs(args: string[], cmdDef: CommandDef): Record<string, unknown> 
   while (i < args.length) {
     const arg = args[i]!;
 
-    if (arg === '--json' || arg === '--key') {
+    if (arg === '--json' || arg === '--md' || arg === '--markdown' || arg === '--key') {
       i += arg === '--key' ? 2 : 1; // --key consumes its value
       continue; // handled separately
     }
@@ -278,7 +282,8 @@ async function main(): Promise<void> {
   }
 
   const outputJson = args.includes('--json');
-  const cmdArgs = args.slice(1).filter(a => a !== '--json');
+  const outputMarkdown = args.includes('--md') || args.includes('--markdown');
+  const cmdArgs = args.slice(1).filter(a => !['--json', '--md', '--markdown'].includes(a));
   const params = parseArgs(cmdArgs, cmdDef);
 
   // Validate positional arg is provided
@@ -300,7 +305,7 @@ async function main(): Promise<void> {
     } else {
       for (const content of result.content) {
         if (content.type === 'text') {
-          console.log(content.text);
+          console.log(outputMarkdown ? content.text : markdownToTerminal(content.text));
         }
       }
     }
