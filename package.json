@@ -1,6 +1,6 @@
 {
   "name": "companies-house-mcp",
-  "version": "2.0.0-alpha.1",
+  "version": "2.0.0",
   "description": "MCP server and CLI for UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
   "type": "module",
   "main": "dist/server/index.js",

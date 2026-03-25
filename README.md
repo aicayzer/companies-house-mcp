@@ -143,6 +143,10 @@ src/
 └── types/                  # TypeScript types (snake_case matching CH API)
 ```
 
+## Disclaimer
+
+This project is not affiliated with or endorsed by Companies House or the UK Government. It uses the publicly available [Companies House API](https://developer.company-information.service.gov.uk/).
+
 ## License
 
 MIT
