@@ -15,7 +15,10 @@
     "typecheck": "pnpm -r typecheck",
     "clean": "pnpm -r clean",
     "format": "pnpm -r format",
-    "format:check": "pnpm -r format:check"
+    "format:check": "pnpm -r format:check",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
@@ -26,6 +29,7 @@
     "globals": "^14.0.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
+    "vitepress": "^1.6.3",
     "vitest": "^3.2.1"
   }
 }

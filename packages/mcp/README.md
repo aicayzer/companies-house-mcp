@@ -9,6 +9,8 @@ MCP server for the [UK Companies House API](https://developer.company-informatio
 
 From v3.0.0 this package is a thin wrapper over [`companies-house-cli`](https://www.npmjs.com/package/companies-house-cli). Existing `npx -y companies-house-mcp` configs work unchanged.
 
+**Full docs:** [companies-house.uk](https://companies-house.uk)
+
 ## Get an API key
 
 Register at [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) — free, takes about 30 seconds.
@@ -129,7 +131,7 @@ Add to `~/.config/zed/settings.json`:
 - `get_uk_establishments` — UK establishments of overseas companies
 - `get_officer_disqualifications` — disqualification orders against an officer
 
-Every tool returns formatted text for humans and structured JSON for agents.
+Every tool returns formatted text for humans and structured JSON for agents. Full parameter reference at [companies-house.uk/tools](https://companies-house.uk/tools).
 
 ## What you can ask
 
@@ -146,7 +148,7 @@ Once connected, ask naturally:
 
 ## CLI
 
-For terminal access without an AI assistant, install [`companies-house-cli`](https://www.npmjs.com/package/companies-house-cli):
+For terminal access without an AI assistant, install [`companies-house-cli`](https://www.npmjs.com/package/companies-house-cli). See [companies-house.uk/cli](https://companies-house.uk/cli) for the full reference.
 
 ```bash
 npm install -g companies-house-cli

@@ -8,6 +8,8 @@ An unofficial CLI and MCP server for the [UK Companies House API](https://develo
 
 Everything runs on a free API key. No backend, no subscriptions, no middleman.
 
+**Documentation:** [companies-house.uk](https://companies-house.uk)
+
 ## Install
 
 **CLI** — installs the `ch` binary:
@@ -70,11 +72,11 @@ ch report 14604577 --json | jq '.profile.company_status'
 ch report 14604577 --md > report.md
 ```
 
-Full reference, flags, and output modes in [`packages/cli`](./packages/cli/README.md).
+Full reference, flags, and output modes at [companies-house.uk/cli](https://companies-house.uk/cli).
 
 ## MCP setup
 
-Add to your client config with your API key and run `npx -y companies-house-mcp`. Detailed setup for Claude Desktop, Claude Code, Cursor, and Zed in [`packages/mcp`](./packages/mcp/README.md).
+Add to your client config with your API key and run `npx -y companies-house-mcp`. Detailed setup for Claude Desktop, Claude Code, Cursor, and Zed at [companies-house.uk/mcp](https://companies-house.uk/mcp).
 
 ## Development
 
@@ -84,7 +86,7 @@ cd companies-house-mcp
 pnpm install && pnpm build && pnpm test:unit
 ```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide. Docs at [companies-house.uk](https://companies-house.uk).
 
 ## Disclaimer
 

@@ -7,6 +7,8 @@
 
 Terminal tool for the [UK Companies House API](https://developer.company-information.service.gov.uk/). Look up companies, check who runs them, trace ownership, scrutinise filings, and run due diligence checks — directly from your terminal.
 
+**Full docs:** [companies-house.uk](https://companies-house.uk)
+
 ## Get an API key
 
 Register at [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) — free, takes about 30 seconds.
@@ -77,7 +79,7 @@ Run `ch config show` to see which source is active.
 
 ## MCP server
 
-This package also ships an MCP server. Running `ch serve` starts it in stdio mode, which is how `companies-house-mcp` uses it internally. For AI assistant setup (Claude, Cursor, Zed), use the dedicated [`companies-house-mcp`](https://www.npmjs.com/package/companies-house-mcp) package — it handles all the wiring.
+This package also ships an MCP server. Running `ch serve` starts it in stdio mode, which is how `companies-house-mcp` uses it internally. For AI assistant setup (Claude, Cursor, Zed), use the dedicated [`companies-house-mcp`](https://www.npmjs.com/package/companies-house-mcp) package — see [companies-house.uk/mcp](https://companies-house.uk/mcp).
 
 ## Development
 
