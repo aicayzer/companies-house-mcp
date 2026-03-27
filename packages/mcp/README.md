@@ -1,4 +1,4 @@
-# companies-house-mcp
+# Companies House MCP
 
 [![npm version](https://img.shields.io/npm/v/companies-house-mcp?style=flat)](https://www.npmjs.com/package/companies-house-mcp)
 [![npm downloads](https://img.shields.io/npm/dw/companies-house-mcp?style=flat)](https://www.npmjs.com/package/companies-house-mcp)
