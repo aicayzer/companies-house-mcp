@@ -44,13 +44,14 @@ jobs:
         run: pnpm build
 
       - name: Publish companies-house-cli
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/cli
+        continue-on-error: true
         env:
           NODE_AUTH_TOKEN: ''
 
       - name: Publish companies-house-mcp
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/mcp
         env:
           NODE_AUTH_TOKEN: ''

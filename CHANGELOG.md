@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## companies-house-mcp [3.0.1] — 2026-03-27
+
+### Fixed
+- `companies-house-mcp` was published with a pnpm `workspace:` protocol in its dependency on `companies-house-cli`, causing `EUNSUPPORTEDPROTOCOL` errors when installing via npm. Switched publish step to `pnpm publish` so workspace protocol is converted to a real version before publishing.
+
+---
+
 ## companies-house-cli [1.0.1] / companies-house-mcp [3.0.0] — 2026-03-27
 
 ### Changed
