@@ -1,0 +1,43 @@
+/* Companies House brand colours */
+
+:root {
+  --vp-c-brand-1: #1f70b9;
+  --vp-c-brand-2: #1a62a8;
+  --vp-c-brand-3: #155496;
+  --vp-c-brand-soft: rgba(31, 112, 185, 0.12);
+}
+
+.dark {
+  --vp-c-brand-1: #03ffe0;
+  --vp-c-brand-2: #02e8cc;
+  --vp-c-brand-3: #02cfb6;
+  --vp-c-brand-soft: rgba(3, 255, 224, 0.12);
+}
+
+/* Hero name gradient: blue → teal */
+:root .clip {
+  background: linear-gradient(120deg, #1f70b9 0%, #03ffe0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Buttons */
+:root {
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-bg: #1f70b9;
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-hover-bg: #1a62a8;
+  --vp-button-brand-active-border: transparent;
+  --vp-button-brand-active-text: #ffffff;
+  --vp-button-brand-active-bg: #155496;
+}
+
+.dark {
+  --vp-button-brand-text: #000000;
+  --vp-button-brand-bg: #03ffe0;
+  --vp-button-brand-hover-bg: #02e8cc;
+  --vp-button-brand-active-bg: #02cfb6;
+}

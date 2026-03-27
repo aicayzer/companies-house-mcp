@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: Companies House
-  text: CLI and MCP server for UK company data
-  tagline: Look up any UK company, check its officers, trace ownership, dig into filings, run a due diligence scan — from your terminal or any AI tool that speaks MCP.
+  text: UK company data
+  tagline: Terminal CLI and MCP server. 17 tools for search, officers, filings, ownership, and due diligence.
   actions:
     - theme: brand
       text: Get started
@@ -18,15 +18,11 @@ hero:
 
 features:
   - title: CLI
-    details: The `ch` command gives you instant access to Companies House from your terminal. Pipe to `jq`, save as Markdown, script with JSON output.
-    icon: ⌨️
+    details: The `ch` command. Search companies, pull reports, pipe to `jq`, or save as Markdown.
   - title: MCP server
-    details: Connect Claude, Cursor, Zed, or any MCP-compatible AI assistant to live UK company data. 17 tools, structured JSON responses.
-    icon: 🔌
+    details: Connect Claude, Cursor, Zed, or any MCP client to live UK company data.
   - title: Due diligence
-    details: Automated red-flag scan with HIGH / MEDIUM / LOW severity ratings. Check company status, insolvency, overdue filings, charges, and officer changes in one call.
-    icon: 🔍
+    details: Automated red-flag scan. Status, insolvency, charges, overdue filings — severity rated.
   - title: Officer networks
-    details: Map a director's connections across every company they are or have been associated with.
-    icon: 🕸️
+    details: Map a director across every company they have ever been associated with.
 ---
