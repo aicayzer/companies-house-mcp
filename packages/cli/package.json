@@ -1,7 +1,7 @@
 {
   "name": "companies-house-cli",
-  "version": "1.0.0",
-  "description": "CLI and MCP server for the UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
+  "version": "1.0.1",
+  "description": "CLI tool for the UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
   "type": "module",
   "exports": {
     "./server": "./dist/server/index.js"
@@ -21,19 +21,23 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write src/ tests/",
     "format:check": "prettier --check src/ tests/",
-    "clean": "rm -rf dist/",
+    "clean": "rm -rf dist/ *.tsbuildinfo",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm run clean && pnpm run build && pnpm test"
   },
   "keywords": [
     "companies-house",
-    "uk-companies",
-    "api",
+    "uk",
     "cli",
+    "company-search",
+    "api",
     "typescript",
     "mcp",
+    "mcp-server",
     "model-context-protocol",
-    "due-diligence"
+    "due-diligence",
+    "officers",
+    "filings"
   ],
   "license": "MIT",
   "engines": {

@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## companies-house-cli [1.0.0] / companies-house-mcp [3.0.0] — 2026-03-27
+## companies-house-cli [1.0.1] / companies-house-mcp [3.0.0] — 2026-03-27
 
 ### Changed
 - **Monorepo restructure.** The codebase is now a pnpm workspace with two packages.
-- `companies-house-cli@1.0.0` is the new primary package. All source code (API client, CLI, MCP server, tools, formatters) lives here. Install for the `ch` terminal CLI.
+- `companies-house-cli@1.0.1` is the new primary package. All source code (API client, CLI, MCP server, tools, formatters) lives here. Install for the `ch` terminal CLI.
 - `companies-house-mcp@3.0.0` is now a thin wrapper that depends on `companies-house-cli` and exposes the MCP server binary. Existing MCP configs (`npx -y companies-house-mcp`) continue to work unchanged.
 - MCP server now reads its version dynamically from `package.json` — no more hardcoded version string.
 - Removed MkDocs documentation site (outdated v1 content). The README is now the single source of truth.
@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - New CLI skill (`companies-house-cli`) bundled with `companies-house-cli` — teaches Claude Code how to help users work with the `ch` binary.
+- `server.json` and `mcpName` field for listing on the [official MCP Registry](https://modelcontextprotocol.io/registry).
+- `llms.txt` structured index for LLM discoverability.
 
 ---
 

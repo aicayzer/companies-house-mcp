@@ -130,7 +130,7 @@ const COMMANDS: CommandDef[] = [
 ];
 
 function printUsage(): void {
-  console.log('Companies House CLI v2\n');
+  console.log('Companies House CLI\n');
   console.log('Usage: ch <command> [arguments] [flags]\n');
   console.log('Commands:');
   const maxLen = Math.max(...COMMANDS.map(c => c.name.length));

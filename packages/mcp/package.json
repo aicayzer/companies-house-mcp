@@ -1,14 +1,15 @@
 {
   "name": "companies-house-mcp",
   "version": "3.0.0",
-  "description": "MCP server for the UK Companies House API — integrates with Claude, Cursor, Windsurf, and other AI tools",
+  "description": "MCP server for the UK Companies House API — connects Claude, Cursor, Zed, and other AI tools to live company data",
   "type": "module",
+  "mcpName": "io.github.aicayzer/companies-house",
   "bin": {
     "companies-house-mcp": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist/",
+    "clean": "rm -rf dist/ *.tsbuildinfo",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -18,11 +19,13 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
     "companies-house",
-    "uk-companies",
+    "uk",
+    "company-search",
     "claude",
-    "ai",
+    "api",
     "due-diligence"
   ],
   "license": "MIT",

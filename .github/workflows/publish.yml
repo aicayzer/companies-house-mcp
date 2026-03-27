@@ -51,3 +51,11 @@ jobs:
         working-directory: packages/mcp
         env:
           NODE_AUTH_TOKEN: ''
+
+      - name: Publish to MCP Registry
+        uses: modelcontextprotocol/registry-publish-action@v1
+        continue-on-error: true
+        with:
+          server-path: server.json
+        env:
+          MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}

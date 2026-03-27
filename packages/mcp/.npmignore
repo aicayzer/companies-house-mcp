@@ -1,0 +1,4 @@
+src/
+*.tsbuildinfo
+tsconfig.json
+eslint.config.js

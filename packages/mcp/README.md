@@ -1,11 +1,13 @@
 # companies-house-mcp
 
-MCP server for the UK [Companies House](https://www.gov.uk/government/organisations/companies-house) API. Connects Claude, Cursor, Windsurf, Zed, and other AI tools to live UK company data.
+[![npm version](https://img.shields.io/npm/v/companies-house-mcp?style=flat)](https://www.npmjs.com/package/companies-house-mcp)
+[![npm downloads](https://img.shields.io/npm/dw/companies-house-mcp?style=flat)](https://www.npmjs.com/package/companies-house-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](https://opensource.org/licenses/MIT)
+[![Node 22+](https://img.shields.io/node/v/companies-house-mcp?style=flat)](https://nodejs.org/)
 
-Provides 17 tools: company search and profiles, officers, ownership (PSCs), filings, charges, insolvency, due diligence checks, and officer network mapping.
+MCP server for the [UK Companies House API](https://developer.company-information.service.gov.uk/). Connects Claude, Cursor, Zed, and other AI tools to live UK company data — 17 tools for search, profiles, officers, filings, ownership, charges, insolvency, and due diligence.
 
-> [!NOTE]
-> This package is the MCP server only. The full CLI (`ch`) is in [`companies-house-cli`](https://www.npmjs.com/package/companies-house-cli).
+From v3.0.0 this package is a thin wrapper over [`companies-house-cli`](https://www.npmjs.com/package/companies-house-cli). Existing `npx -y companies-house-mcp` configs work unchanged.
 
 ## Get an API key
 
@@ -79,27 +81,6 @@ Add to `~/.cursor/mcp.json`:
 </details>
 
 <details>
-<summary>Windsurf</summary>
-
-Add to `~/.codeium/windsurf/mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "companies-house": {
-      "command": "npx",
-      "args": ["-y", "companies-house-mcp"],
-      "env": {
-        "COMPANIES_HOUSE_API_KEY": "your-key-here"
-      }
-    }
-  }
-}
-```
-
-</details>
-
-<details>
 <summary>Zed</summary>
 
 Add to `~/.config/zed/settings.json`:
@@ -121,16 +102,47 @@ Add to `~/.config/zed/settings.json`:
 
 </details>
 
+## Tools
+
+**Search**
+- `search_companies` — search UK companies by name, status, type, SIC code, or location
+- `search_officers` — search for company officers by name
+
+**Company data**
+- `get_company_profile` — status, registered addresses, SIC codes, accounts and confirmation statement dates
+- `get_officers` — current and resigned directors, secretaries, and other officers
+- `get_appointments` — all appointments held by a specific officer across all companies
+- `get_ownership` — persons with significant control (PSCs) and corporate ownership
+- `get_filings` — filing history with document metadata and download links
+- `get_filing_document` — retrieve a specific filing document
+- `get_charges` — charges and mortgages registered against the company
+- `get_insolvency` — insolvency proceedings, liquidations, and administrations
+- `get_company_registers` — statutory registers (members, directors, secretaries)
+
+**Composite** — combine multiple API calls into a single response
+- `company_report` — full overview: profile, officers, ownership, charges, filings, and insolvency
+- `due_diligence_check` — automated red-flag scan with HIGH/MEDIUM/LOW severity ratings
+- `officer_network` — map a director's connections across all associated UK companies
+
+**Extended**
+- `get_exemptions` — disclosure exemptions
+- `get_uk_establishments` — UK establishments of overseas companies
+- `get_officer_disqualifications` — disqualification orders against an officer
+
+Every tool returns formatted text for humans and structured JSON for agents.
+
 ## What you can ask
 
 Once connected, ask naturally:
 
 - "Look up Tesco on Companies House"
 - "Who are the directors of Anthropic Limited?"
-- "Run a due diligence check on company number 14604577"
+- "Run a due diligence check on company 14604577"
 - "Show me the filing history for BrewDog"
 - "What other companies is this director involved with?"
 - "Does this company have any outstanding charges?"
+- "Map the ownership structure of this holding company"
+- "Are there any insolvency proceedings against this company?"
 
 ## CLI
 
@@ -141,10 +153,6 @@ npm install -g companies-house-cli
 ch search "Anthropic"
 ch report 14604577
 ```
-
-## Development
-
-This package is part of the [companies-house monorepo](https://github.com/aicayzer/companies-house-mcp). See the root README for development setup.
 
 ## Disclaimer
 

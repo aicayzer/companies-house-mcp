@@ -1,0 +1,15 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.aicayzer/companies-house",
+  "description": "17 tools for the UK Companies House API — company search, profiles, officers, filings, charges, insolvency, ownership, and due diligence",
+  "version": "3.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "companies-house-mcp",
+      "version": "3.0.0",
+      "runtime": "node",
+      "transport": [{ "type": "stdio" }]
+    }
+  ]
+}

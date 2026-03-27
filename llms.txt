@@ -1,0 +1,55 @@
+# Companies House CLI & MCP
+
+> UK Companies House API tools. CLI binary and MCP server for company search, profiles, officers, filings, charges, insolvency, ownership, and due diligence.
+
+## Packages
+
+- [companies-house-cli](https://www.npmjs.com/package/companies-house-cli): CLI binary (`ch`) for terminal access — install globally with `npm install -g companies-house-cli`
+- [companies-house-mcp](https://www.npmjs.com/package/companies-house-mcp): MCP server for Claude, Cursor, Zed, and other AI tools — run with `npx -y companies-house-mcp`
+
+## API key
+
+Free key from https://developer.company-information.service.gov.uk/ — required by both packages.
+
+## Tools
+
+- search_companies — search UK companies by name, status, type, SIC code, or location
+- search_officers — search for company officers by name
+- get_company_profile — company status, registered addresses, SIC codes, accounts and confirmation statement dates
+- get_officers — current and resigned directors, secretaries, and other officers
+- get_appointments — all appointments held by a specific officer across all companies
+- get_ownership — persons with significant control (PSCs) and corporate ownership structure
+- get_filings — filing history with document metadata and download links
+- get_filing_document — retrieve a specific filing document by company number and transaction ID
+- get_charges — charges and mortgages registered against the company
+- get_insolvency — insolvency proceedings, liquidations, and administrations
+- get_company_registers — statutory registers (members, directors, secretaries, charges)
+- get_exemptions — disclosure exemptions held by the company
+- get_uk_establishments — UK establishments of overseas companies
+- get_officer_disqualifications — disqualification orders made against an officer
+- company_report — full company overview combining profile, officers, ownership, charges, filings, and insolvency in a single call
+- due_diligence_check — automated red-flag scan with HIGH/MEDIUM/LOW severity ratings across status, officers, ownership, charges, and insolvency
+- officer_network — map a director's connections across all UK companies they are or were associated with
+
+## CLI commands
+
+```
+ch search <query>
+ch profile <company-number>
+ch officers <company-number>
+ch ownership <company-number>
+ch filings <company-number>
+ch charges <company-number>
+ch insolvency <company-number>
+ch report <company-number>
+ch check <company-number>
+ch network <officer-name>
+ch search-officers <query>
+ch config set-key <key>
+ch config show
+ch serve
+```
+
+## Source
+
+https://github.com/aicayzer/companies-house-mcp
