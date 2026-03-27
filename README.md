@@ -1,44 +1,62 @@
 # Companies House CLI & MCP
 
-Tools for the [UK Companies House API](https://developer.company-information.service.gov.uk/). Search companies, check officers, trace ownership, scrutinise filings, and run due diligence — from the terminal or any AI assistant.
+Search UK companies, check who runs them, trace ownership, scrutinise filings, and run due diligence checks — from your terminal or any AI assistant.
 
-Two packages, one repo:
+Built on the free [Companies House API](https://developer.company-information.service.gov.uk/). Two packages, one repo.
 
-| Package | Install | What it does |
-|---------|---------|--------------|
-| [`companies-house-cli`](./packages/cli) [![npm](https://img.shields.io/npm/v/companies-house-cli?style=flat)](https://www.npmjs.com/package/companies-house-cli) | `npm install -g companies-house-cli` | `ch` binary — full terminal CLI with 11 commands and three output modes |
-| [`companies-house-mcp`](./packages/mcp) [![npm](https://img.shields.io/npm/v/companies-house-mcp?style=flat)](https://www.npmjs.com/package/companies-house-mcp) | `npx -y companies-house-mcp` | MCP server — connects Claude, Cursor, Zed, and other AI tools to live company data |
+---
 
-Both require a free API key from [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/).
+## For terminal users → [`companies-house-cli`](./packages/cli)
+
+[![npm](https://img.shields.io/npm/v/companies-house-cli?style=flat)](https://www.npmjs.com/package/companies-house-cli)
+
+```bash
+npm install -g companies-house-cli
+ch config set-key your-key-here
+ch search "Anthropic"
+ch report 14604577
+ch check 14604577
+```
+
+11 commands. Three output modes: colour terminal (default), `--md` for markdown, `--json` for scripting. Full reference in [`packages/cli`](./packages/cli/README.md).
+
+## For AI assistants → [`companies-house-mcp`](./packages/mcp)
+
+[![npm](https://img.shields.io/npm/v/companies-house-mcp?style=flat)](https://www.npmjs.com/package/companies-house-mcp)
+
+```bash
+npx -y companies-house-mcp
+```
+
+MCP server with 17 tools. Works with Claude Desktop, Claude Code, Cursor, Zed, and anything else that speaks MCP. Setup instructions for each client in [`packages/mcp`](./packages/mcp/README.md).
+
+---
 
 ## What's available
 
 17 tools across four groups:
 
-- **Search** — find companies by name, status, type, SIC code, or location; find officers by name
-- **Company data** — profile, officers, ownership (PSCs), filing history, charges, insolvency, statutory registers
-- **Composite** — `company_report` (full overview in one call), `due_diligence_check` (automated red-flag scan), `officer_network` (map a director's connections across all their companies)
-- **Extended** — exemptions, UK establishments, officer disqualifications, individual filing documents
+- **Search** — companies by name, status, type, SIC code, or location; officers by name
+- **Company data** — profile, officers, ownership (PSCs), filings, charges, insolvency, registers
+- **Composite** — full company report, due diligence red-flag scan, officer network map
+- **Extended** — exemptions, UK establishments of overseas companies, disqualification orders
 
-## Packages
+Every tool returns formatted text for humans and structured JSON for agents.
 
-Full documentation is in each package's README:
+## API key
 
-- [`packages/cli`](./packages/cli/README.md) — CLI reference, commands, flags, output modes
-- [`packages/mcp`](./packages/mcp/README.md) — MCP setup for Claude Desktop, Claude Code, Cursor, and Zed
+Both packages use the same key. Register free at [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) — takes about 30 seconds.
 
 ## Development
 
 ```bash
 git clone https://github.com/aicayzer/companies-house-mcp.git
 cd companies-house-mcp
-pnpm install
-pnpm build
-pnpm test:unit
+pnpm install && pnpm build && pnpm test:unit
 ```
 
-Requires Node.js ≥22 and pnpm. See [CONTRIBUTING.md](./CONTRIBUTING.md) for more.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full setup guide.
 
 ## Licence
 
-MIT
+MIT — not affiliated with or endorsed by Companies House or the UK Government.
