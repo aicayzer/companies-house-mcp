@@ -6,6 +6,7 @@ npm-debug.log*
 dist/
 build/
 site/
+*.tsbuildinfo
 
 # Environment variables
 .env

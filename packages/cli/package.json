@@ -1,0 +1,72 @@
+{
+  "name": "companies-house-cli",
+  "version": "1.0.0",
+  "description": "CLI and MCP server for the UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
+  "type": "module",
+  "exports": {
+    "./server": "./dist/server/index.js"
+  },
+  "bin": {
+    "ch": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit/",
+    "test:integration": "vitest run tests/integration/",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write src/ tests/",
+    "format:check": "prettier --check src/ tests/",
+    "clean": "rm -rf dist/",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm run clean && pnpm run build && pnpm test"
+  },
+  "keywords": [
+    "companies-house",
+    "uk-companies",
+    "api",
+    "cli",
+    "typescript",
+    "mcp",
+    "model-context-protocol",
+    "due-diligence"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aicayzer/companies-house-mcp.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/aicayzer/companies-house-mcp/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/aicayzer/companies-house-mcp/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "zod": "^3.25.50"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@typescript-eslint/eslint-plugin": "^8.33.1",
+    "@typescript-eslint/parser": "^8.33.1",
+    "eslint": "^9.28.0",
+    "globals": "^14.0.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  },
+  "files": [
+    "dist/",
+    ".claude/skills/",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ]
+}

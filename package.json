@@ -1,58 +1,21 @@
 {
-  "name": "companies-house-mcp",
-  "version": "2.1.0",
-  "description": "MCP server and CLI for UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
+  "name": "companies-house",
+  "private": true,
   "type": "module",
-  "main": "dist/server/index.js",
-  "bin": {
-    "companies-house-mcp": "dist/server/index.js",
-    "ch": "dist/cli/index.js"
-  },
-  "scripts": {
-    "build": "tsc",
-    "build:watch": "tsc --watch",
-    "dev": "npm run build && node dist/server/index.js",
-    "start": "node dist/server/index.js",
-    "start:http": "node dist/server/index.js --http",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:unit": "vitest run tests/unit/",
-    "test:integration": "vitest run tests/integration/",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write src/ tests/",
-    "format:check": "prettier --check src/ tests/",
-    "clean": "rm -rf dist/",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run clean && npm run build && npm test"
-  },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "companies-house",
-    "uk-companies",
-    "api",
-    "typescript",
-    "cli",
-    "due-diligence"
-  ],
-  "author": "Companies House MCP Contributors",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/aicayzer/companies-house-mcp.git"
-  },
-  "homepage": "https://github.com/aicayzer/companies-house-mcp#readme",
-  "bugs": {
-    "url": "https://github.com/aicayzer/companies-house-mcp/issues"
-  },
   "engines": {
     "node": ">=22.0.0"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "zod": "^3.25.50"
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm -r test:unit",
+    "test:integration": "pnpm -r test:integration",
+    "lint": "pnpm -r lint",
+    "lint:fix": "pnpm -r lint:fix",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r clean",
+    "format": "pnpm -r format",
+    "format:check": "pnpm -r format:check"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
@@ -64,12 +27,5 @@
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
     "vitest": "^3.2.1"
-  },
-  "files": [
-    "dist/",
-    ".claude/skills/",
-    "README.md",
-    "LICENSE",
-    "package.json"
-  ]
+  }
 }

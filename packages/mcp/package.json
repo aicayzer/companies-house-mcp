@@ -1,0 +1,60 @@
+{
+  "name": "companies-house-mcp",
+  "version": "3.0.0",
+  "description": "MCP server for the UK Companies House API — integrates with Claude, Cursor, Windsurf, and other AI tools",
+  "type": "module",
+  "bin": {
+    "companies-house-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist/",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/",
+    "prepublishOnly": "pnpm run clean && pnpm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "companies-house",
+    "uk-companies",
+    "claude",
+    "ai",
+    "due-diligence"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aicayzer/companies-house-mcp.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/aicayzer/companies-house-mcp/tree/main/packages/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/aicayzer/companies-house-mcp/issues"
+  },
+  "dependencies": {
+    "companies-house-cli": "workspace:^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@typescript-eslint/eslint-plugin": "^8.33.1",
+    "@typescript-eslint/parser": "^8.33.1",
+    "eslint": "^9.28.0",
+    "globals": "^14.0.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3"
+  },
+  "files": [
+    "dist/",
+    ".claude/skills/",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ]
+}
