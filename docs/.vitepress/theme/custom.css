@@ -5,6 +5,9 @@
   --vp-c-brand-2: #1a62a8;
   --vp-c-brand-3: #155496;
   --vp-c-brand-soft: rgba(31, 112, 185, 0.12);
+
+  /* Hero name: solid brand blue in both modes */
+  --vp-home-hero-name-color: #1f70b9;
 }
 
 .dark {
@@ -12,14 +15,9 @@
   --vp-c-brand-2: #02e8cc;
   --vp-c-brand-3: #02cfb6;
   --vp-c-brand-soft: rgba(3, 255, 224, 0.12);
-}
 
-/* Hero name gradient: blue → teal */
-:root .clip {
-  background: linear-gradient(120deg, #1f70b9 0%, #03ffe0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  /* Hero name stays the same blue even in dark mode */
+  --vp-home-hero-name-color: #1f70b9;
 }
 
 /* Buttons */
@@ -40,4 +38,14 @@
   --vp-button-brand-bg: #03ffe0;
   --vp-button-brand-hover-bg: #02e8cc;
   --vp-button-brand-active-bg: #02cfb6;
+}
+
+/* Hero image: no default background circle */
+.VPHero .image-bg {
+  display: none;
+}
+
+.VPHero .image-src {
+  max-height: 340px;
+  width: auto;
 }

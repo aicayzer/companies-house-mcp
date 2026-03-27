@@ -7,7 +7,7 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],
-    ['meta', { name: 'theme-color', content: '#1d4ed8' }],
+    ['meta', { name: 'theme-color', content: '#1f70b9' }],
   ],
 
   sitemap: {
@@ -18,19 +18,12 @@ export default defineConfig({
     siteTitle: 'Companies House',
 
     nav: [
-      { text: 'Getting started', link: '/getting-started' },
       { text: 'CLI', link: '/cli' },
-      { text: 'Tools', link: '/tools' },
-      { text: 'MCP setup', link: '/mcp' },
+      { text: 'MCP', link: '/mcp' },
     ],
 
     sidebar: [
-      {
-        text: 'Introduction',
-        items: [
-          { text: 'Getting started', link: '/getting-started' },
-        ],
-      },
+      { text: 'Getting started', link: '/getting-started' },
       {
         text: 'CLI',
         items: [
@@ -38,10 +31,10 @@ export default defineConfig({
         ],
       },
       {
-        text: 'MCP server',
+        text: 'MCP',
         items: [
-          { text: 'Tools reference', link: '/tools' },
           { text: 'Setup', link: '/mcp' },
+          { text: 'Tools reference', link: '/tools' },
         ],
       },
     ],
@@ -52,8 +45,7 @@ export default defineConfig({
     },
 
     footer: {
-      message: 'Not affiliated with or endorsed by Companies House or the UK Government.',
-      copyright: 'MIT Licence',
+      message: 'Not affiliated with or endorsed by Companies House or the UK Government. MIT Licence.',
     },
 
     socialLinks: [
