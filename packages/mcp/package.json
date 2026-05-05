@@ -1,6 +1,6 @@
 {
   "name": "companies-house-mcp",
-  "version": "3.0.2",
+  "version": "3.1.0",
   "description": "MCP server for the UK Companies House API — connects Claude, Cursor, Zed, and other AI tools to live company data",
   "type": "module",
   "mcpName": "io.github.aicayzer/companies-house",

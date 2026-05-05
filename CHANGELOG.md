@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## companies-house-cli [1.1.0] / companies-house-mcp [3.1.0] — 2026-05-05
+
+### Added
+- **`download_filing_document` tool** — fetches the actual filed document (PDF / XHTML / XML / JSON) for a filing history item via the Companies House Document API. Handles the two-step redirect flow; supports `file_path` and `base64` return modes (base64 required for remote HTTP servers). Contributed by Jon Bloor ([#18](https://github.com/aicayzer/companies-house-mcp/pull/18)).
+
+### Fixed
+- **HTTP transport crash** — `--http` mode crashed on every request after the first with `Error: Already connected to a transport`. Switched to stateless mode: a fresh `McpServer` + `StreamableHTTPServerTransport` per request, torn down on `res.close`. Contributed by Jon Bloor ([#18](https://github.com/aicayzer/companies-house-mcp/pull/18)).
+
+### Changed
+- **HTTP server: optional bearer-token auth** — set `MCP_BEARER_TOKEN` to require an `Authorization: Bearer` header on `/mcp`. Logs a warning when unset. Contributed by Jon Bloor ([#18](https://github.com/aicayzer/companies-house-mcp/pull/18)).
+- **HTTP server: optional OAuth `client_credentials` grant** — set `MCP_OAUTH_CLIENT_ID` and `MCP_OAUTH_CLIENT_SECRET` to enable `/oauth/token` and `/.well-known/oauth-authorization-server`. Lets Claude desktop's Custom Connector UI authenticate without a manually-pasted bearer token. Contributed by Jon Bloor ([#18](https://github.com/aicayzer/companies-house-mcp/pull/18)).
+- OAuth endpoint logic extracted from `main()` into `src/server/oauth.ts`.
+
+---
+
 ## companies-house-mcp [3.0.1] — 2026-03-27
 
 ### Fixed

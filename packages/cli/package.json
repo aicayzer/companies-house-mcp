@@ -1,6 +1,6 @@
 {
   "name": "companies-house-cli",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "CLI tool for the UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
   "type": "module",
   "exports": {
