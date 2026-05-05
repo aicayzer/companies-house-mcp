@@ -8,6 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { APIClient } from '../api/client.js';
 import { getAllTools } from '../tools/registry.js';
 import { resolveApiKey } from '../config.js';
+import { handleOAuthRequest } from './oauth.js';
 
 // Import all tool modules to trigger registration
 import '../tools/search.js';
@@ -38,21 +39,6 @@ function getApiKey(): string {
     process.exit(1);
   }
   return resolved.key;
-}
-
-/** Read a request body to a string. Used for parsing the form-encoded
- *  body of the OAuth token endpoint. */
-function readRequestBody(req: {
-  on: (event: string, cb: (chunk?: unknown) => void) => void;
-}): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    let body = '';
-    req.on('data', (chunk: unknown) => {
-      body += String(chunk);
-    });
-    req.on('end', () => resolve(body));
-    req.on('error', (err: unknown) => reject(err));
-  });
 }
 
 async function main(): Promise<void> {
@@ -102,18 +88,9 @@ async function main(): Promise<void> {
     const port = portArg ? parseInt(portArg, 10) : 3000;
     const expectedToken = process.env.MCP_BEARER_TOKEN?.trim();
 
-    // OAuth (client_credentials grant) — optional, enabled when both
-    // MCP_OAUTH_CLIENT_ID and MCP_OAUTH_CLIENT_SECRET are set. This lets
-    // clients that don't support a manually-pasted bearer header (e.g.
-    // Claude desktop's Custom Connector UI) authenticate via OAuth and
-    // receive an access token that is identical to MCP_BEARER_TOKEN.
     const oauthClientId = process.env.MCP_OAUTH_CLIENT_ID?.trim();
     const oauthClientSecret = process.env.MCP_OAUTH_CLIENT_SECRET?.trim();
     const oauthEnabled = Boolean(oauthClientId && oauthClientSecret);
-    // Optional override for the public URL announced in OAuth discovery
-    // metadata. Falls back to deriving it from the request headers, which
-    // works when the server sits behind Fly's edge (which sets
-    // X-Forwarded-Proto correctly).
     const publicUrlOverride = process.env.MCP_PUBLIC_URL?.trim();
 
     if (!expectedToken) {
@@ -151,159 +128,25 @@ async function main(): Promise<void> {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
         });
-        res.end(
-          JSON.stringify({
-            status: 'ok',
-            tools: tools.length,
-            oauth: oauthEnabled,
-          }),
-        );
+        res.end(JSON.stringify({ status: 'ok', tools: tools.length, oauth: oauthEnabled }));
         return;
       }
 
-      // ---- OAuth: discovery metadata
-      if (url.pathname === '/.well-known/oauth-authorization-server') {
-        if (!oauthEnabled) {
-          res.writeHead(404);
-          res.end('Not Found');
-          return;
-        }
-        const proto =
-          (req.headers['x-forwarded-proto'] as string | undefined) ??
-          'http';
-        const host =
-          (req.headers.host as string | undefined) ?? `localhost:${port}`;
-        const issuer = publicUrlOverride || `${proto}://${host}`;
-        res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
+      if (oauthEnabled) {
+        const handled = await handleOAuthRequest(req, res, url.pathname, {
+          clientId: oauthClientId!,
+          clientSecret: oauthClientSecret!,
+          expectedToken: expectedToken!,
+          publicUrlOverride,
+          port,
         });
-        res.end(
-          JSON.stringify({
-            issuer,
-            token_endpoint: `${issuer}/oauth/token`,
-            grant_types_supported: ['client_credentials'],
-            token_endpoint_auth_methods_supported: [
-              'client_secret_basic',
-              'client_secret_post',
-            ],
-            response_types_supported: [],
-          }),
-        );
-        return;
-      }
-
-      // ---- OAuth: token endpoint
-      if (url.pathname === '/oauth/token') {
-        if (!oauthEnabled) {
-          res.writeHead(404);
-          res.end('Not Found');
-          return;
-        }
-        if (req.method !== 'POST') {
-          res.writeHead(405, {
-            'Content-Type': 'application/json',
-            Allow: 'POST',
-          });
-          res.end(
-            JSON.stringify({
-              error: 'invalid_request',
-              error_description: 'Only POST is supported',
-            }),
-          );
-          return;
-        }
-
-        let bodyText = '';
-        try {
-          bodyText = await readRequestBody(req);
-        } catch (err) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              error: 'invalid_request',
-              error_description: `Could not read body: ${(err as Error).message}`,
-            }),
-          );
-          return;
-        }
-        const params = new URLSearchParams(bodyText);
-
-        // Client credentials may arrive via HTTP Basic auth header
-        // (RFC 6749 §2.3.1) or in the request body.
-        let clientId: string | undefined;
-        let clientSecret: string | undefined;
-
-        const authHeader =
-          (req.headers.authorization as string | undefined) ?? '';
-        const basicMatch = /^Basic\s+(.+)$/i.exec(authHeader);
-        if (basicMatch && basicMatch[1]) {
-          try {
-            const decoded = Buffer.from(basicMatch[1], 'base64').toString(
-              'utf-8',
-            );
-            const colonIdx = decoded.indexOf(':');
-            if (colonIdx >= 0) {
-              clientId = decodeURIComponent(decoded.slice(0, colonIdx));
-              clientSecret = decodeURIComponent(decoded.slice(colonIdx + 1));
-            }
-          } catch {
-            /* fall through to body credentials */
-          }
-        }
-        if (!clientId) clientId = params.get('client_id') ?? undefined;
-        if (!clientSecret)
-          clientSecret = params.get('client_secret') ?? undefined;
-
-        if (
-          !clientId ||
-          !clientSecret ||
-          clientId !== oauthClientId ||
-          clientSecret !== oauthClientSecret
-        ) {
-          res.writeHead(401, {
-            'Content-Type': 'application/json',
-            'WWW-Authenticate': 'Basic',
-          });
-          res.end(
-            JSON.stringify({
-              error: 'invalid_client',
-              error_description: 'Unknown client_id or client_secret',
-            }),
-          );
-          return;
-        }
-
-        const grantType = params.get('grant_type');
-        if (grantType !== 'client_credentials') {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              error: 'unsupported_grant_type',
-              error_description:
-                'Only client_credentials grant is supported by this server',
-            }),
-          );
-          return;
-        }
-
-        // Issue an access token. We re-use the static MCP_BEARER_TOKEN
-        // value as the access token, which means the existing /mcp
-        // bearer-auth check accepts OAuth-issued tokens with no extra
-        // logic. expires_in is advisory; the server doesn't actually
-        // expire tokens (the static bearer never expires).
-        res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-          Pragma: 'no-cache',
-        });
-        res.end(
-          JSON.stringify({
-            access_token: expectedToken,
-            token_type: 'Bearer',
-            expires_in: 3600,
-          }),
-        );
+        if (handled) return;
+      } else if (
+        url.pathname === '/.well-known/oauth-authorization-server' ||
+        url.pathname === '/oauth/token'
+      ) {
+        res.writeHead(404);
+        res.end('Not Found');
         return;
       }
 
@@ -316,8 +159,8 @@ async function main(): Promise<void> {
       // Bearer token auth (only enforced when MCP_BEARER_TOKEN is set)
       if (expectedToken) {
         const authHeader = req.headers.authorization ?? '';
-        const match = /^Bearer\s+(.+)$/i.exec(authHeader);
-        if (!match || match[1] !== expectedToken) {
+        const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+        if (!bearerMatch || bearerMatch[1] !== expectedToken) {
           res.writeHead(401, {
             'Content-Type': 'application/json',
             'WWW-Authenticate': 'Bearer',
@@ -340,16 +183,8 @@ async function main(): Promise<void> {
         sessionServer = buildServer();
 
         const cleanup = () => {
-          try {
-            transport?.close();
-          } catch {
-            /* ignore */
-          }
-          try {
-            sessionServer?.close();
-          } catch {
-            /* ignore */
-          }
+          try { transport?.close(); } catch { /* ignore */ }
+          try { sessionServer?.close(); } catch { /* ignore */ }
         };
         res.on('close', cleanup);
 
@@ -361,16 +196,8 @@ async function main(): Promise<void> {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'internal_server_error' }));
         }
-        try {
-          transport?.close();
-        } catch {
-          /* ignore */
-        }
-        try {
-          sessionServer?.close();
-        } catch {
-          /* ignore */
-        }
+        try { transport?.close(); } catch { /* ignore */ }
+        try { sessionServer?.close(); } catch { /* ignore */ }
       }
     });
 
@@ -385,16 +212,10 @@ async function main(): Promise<void> {
         console.error('Auth: NONE — set MCP_BEARER_TOKEN before exposing publicly');
       }
       if (oauthEnabled) {
-        console.error(
-          'OAuth: enabled — client_credentials grant accepted at /oauth/token',
-        );
-        console.error(
-          `OAuth discovery: http://localhost:${port}/.well-known/oauth-authorization-server`,
-        );
+        console.error('OAuth: enabled — client_credentials grant accepted at /oauth/token');
+        console.error(`OAuth discovery: http://localhost:${port}/.well-known/oauth-authorization-server`);
       } else {
-        console.error(
-          'OAuth: disabled — set MCP_OAUTH_CLIENT_ID and MCP_OAUTH_CLIENT_SECRET to enable',
-        );
+        console.error('OAuth: disabled — set MCP_OAUTH_CLIENT_ID and MCP_OAUTH_CLIENT_SECRET to enable');
       }
     });
   } else {
