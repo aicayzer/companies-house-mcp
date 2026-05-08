@@ -20,7 +20,7 @@ const schema = z.object(shape);
 registerTool({
   name: 'get_filings',
   description:
-    'Get filing history for a UK company. Includes accounts, annual returns, officer changes, mortgage registrations, and all other filings. Use the category parameter to filter by type. Returns transaction IDs for retrieving specific documents.',
+    'Get filing history for a UK company. Includes accounts, annual returns, officer changes, mortgage registrations, and all other filings. Use the category parameter to filter by type. Each item exposes both a transaction_id (identifies the filing) and a document_id (identifies the document blob — pass THIS to download_filing_document, NOT transaction_id). The two IDs look similar but are different strings.',
   inputSchema: shape,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {

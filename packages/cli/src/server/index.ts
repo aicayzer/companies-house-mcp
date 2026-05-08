@@ -143,7 +143,8 @@ async function main(): Promise<void> {
         if (handled) return;
       } else if (
         url.pathname === '/.well-known/oauth-authorization-server' ||
-        url.pathname === '/oauth/token'
+        url.pathname === '/oauth/token' ||
+        url.pathname === '/oauth/authorize'
       ) {
         res.writeHead(404);
         res.end('Not Found');

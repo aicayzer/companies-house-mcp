@@ -42,6 +42,20 @@ export function formatDate(dateStr?: string): string {
   }
 }
 
+/** Extract the document ID from a `links.document_metadata` URL.
+ *  Returns undefined if the URL is missing or malformed. The document
+ *  ID is the final path segment of the Document API URL and is the
+ *  value that `download_filing_document` expects. */
+export function extractDocumentId(url?: string): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim().replace(/\/+$/, '');
+  const marker = '/document/';
+  const idx = trimmed.lastIndexOf(marker);
+  if (idx >= 0) return trimmed.slice(idx + marker.length);
+  const last = trimmed.split('/').pop();
+  return last || undefined;
+}
+
 export function formatCompanyStatus(status: string): string {
   const statusMap: Record<string, string> = {
     active: 'Active',
@@ -260,6 +274,18 @@ export function formatFilings(items: FilingHistoryItem[], total: number): string
     lines.push(`- **Category:** ${filing.category}`);
     lines.push(`- **Type:** ${filing.type}`);
     if (filing.transaction_id) lines.push(`- **Transaction ID:** ${filing.transaction_id}`);
+    // Surface the document_id (final path segment of links.document_metadata)
+    // so `download_filing_document` can be invoked from the same response.
+    // Without this, clients that rely on the formatted text — rather than
+    // the structured payload — cannot find the document_id and the
+    // download tool is effectively unreachable.
+    const docId = extractDocumentId(
+      (filing as unknown as { links?: { document_metadata?: string } }).links
+        ?.document_metadata,
+    );
+    if (docId) {
+      lines.push(`- **Document ID:** ${docId} *(use this with download_filing_document)*`);
+    }
     if (filing.paper_filed) lines.push('- *Paper filed*');
     lines.push('');
   }

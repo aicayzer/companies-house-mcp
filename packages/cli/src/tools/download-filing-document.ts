@@ -17,7 +17,14 @@
  *   - returns the bytes inline as a base64 string in the response payload
  *     (`return_as: 'base64'`), which is what you want when the MCP server
  *     runs on a different machine to the caller (e.g. hosted on Fly.io and
- *     accessed over HTTP via mcp-remote).
+ *     accessed over HTTP via mcp-remote or Claude desktop's Custom
+ *     Connector).
+ *
+ * NOTE on base64 mode: the payload (including `content_base64`) is JSON-
+ * stringified into the *text content block* of the response — not just the
+ * structured-content field. This is required for clients like Claude
+ * desktop's Custom Connector that don't surface structuredContent to the
+ * model. Clients should JSON-parse the text and pull out `content_base64`.
  *
  * Save location precedence (file_path mode only):
  *   1. `save_dir` parameter on the call
@@ -79,7 +86,8 @@ const shape = {
     .describe(
       'The document id from a filing history item. Typically exposed on a ' +
         'filing as `links.document_metadata` (e.g. ".../document/ABC123"); ' +
-        'pass just the final path segment here.',
+        'pass just the final path segment here. NOTE this is different ' +
+        'from the transaction_id — see `get_filings` description.',
     ),
   format: z
     .enum(['pdf', 'xhtml', 'xml', 'json'])
@@ -96,9 +104,11 @@ const shape = {
       'How to return the document. "file_path" (default) writes the bytes ' +
         'to disk on the server and returns the local path — works when ' +
         'the MCP server runs on the same machine as the caller (stdio ' +
-        'mode). "base64" returns the bytes inline as a base64 string in ' +
-        'the response payload — required when the server is remote (HTTP) ' +
-        'and the caller has no access to the server filesystem.',
+        'mode). "base64" returns the bytes inline as a base64 string ' +
+        'embedded in the response\'s text content block — required when ' +
+        'the server is remote (HTTP) and the caller has no access to the ' +
+        'server filesystem. JSON-parse the response text and extract the ' +
+        '`content_base64` field, then base64-decode to recover the bytes.',
     ),
   company_number: z
     .string()
@@ -262,9 +272,10 @@ registerTool({
     'Companies House filing history item via the Document API. By default ' +
     'writes to disk on the server and returns the file path; pass ' +
     '`return_as: "base64"` to get the bytes inline (required for remote ' +
-    'MCP servers). Pair with `get_filings` — take the `links.' +
-    'document_metadata` value from a filing and pass its final path ' +
-    'segment as `document_id`.',
+    'MCP servers — the bytes are embedded in the response\'s text content ' +
+    'as JSON; parse it and extract `content_base64`). Pair with ' +
+    '`get_filings` — take the `document_id` it surfaces (NOT ' +
+    '`transaction_id`) and pass it here.',
   inputSchema: shape,
   annotations: TOOL_ANNOTATIONS,
   async execute(_client: APIClient, params: unknown) {
@@ -301,19 +312,20 @@ registerTool({
       };
 
       // ---- base64 mode: return the bytes inline, no disk write.
+      // We embed the entire payload (including `content_base64`) in the
+      // response's text content block AS WELL AS in structuredContent.
+      // Some MCP clients (notably Claude desktop's Custom Connector)
+      // only surface text content to the model and would otherwise
+      // miss the bytes entirely; others (Cowork, structured-aware
+      // tooling, the existing unit tests) read structuredContent.
+      // Putting it in both keeps every client working.
       if (input.return_as === 'base64') {
         const payload = {
           ...commonPayload,
-          return_as: 'base64',
+          return_as: 'base64' as const,
           content_base64: buffer.toString('base64'),
         };
-        const summary =
-          `Returning ${buffer.byteLength.toLocaleString()} bytes ` +
-          `(${contentType}) inline as base64. Decode with e.g. ` +
-          `\`echo "$content_base64" | base64 -d > out.${
-            FORMAT_EXTENSION[input.format] ?? 'bin'
-          }\`.`;
-        return makeTextResult(summary, payload);
+        return makeTextResult(JSON.stringify(payload), payload);
       }
 
       // ---- file_path mode (default): write to disk, return the path.
