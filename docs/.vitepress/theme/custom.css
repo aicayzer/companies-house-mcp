@@ -41,3 +41,22 @@
   max-height: 340px;
   width: auto;
 }
+
+/* Nav search box.
+   By default VitePress shifts the search box right on pages that have a
+   sidebar — the title reserves a sidebar-width column there but not on the
+   home page, so the box jumps horizontally when moving between the landing
+   page and the docs. Reserve the same column on sidebar-less pages (the home
+   page) so the search box stays in one place across the whole site. */
+@media (min-width: 960px) {
+  .VPNavBar:not(.has-sidebar) .title {
+    width: calc(var(--vp-sidebar-width) - 32px);
+    flex-shrink: 0;
+  }
+}
+
+/* Roughly double the default search box width (~140px → 280px) — it reads as
+   a search field rather than a compact button. */
+.VPNavBarSearch .DocSearch-Button {
+  width: 280px;
+}
