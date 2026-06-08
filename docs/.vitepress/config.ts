@@ -8,6 +8,16 @@ export default defineConfig({
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],
     ['meta', { name: 'theme-color', content: '#1f70b9' }],
+    // Cloudflare Web Analytics — cookieless beacon. The token is a public
+    // site tag (embedded in page HTML), not a secret.
+    [
+      'script',
+      {
+        defer: '',
+        src: 'https://static.cloudflareinsights.com/beacon.min.js',
+        'data-cf-beacon': '{"token": "379eb544c2b44688a31845fa2b46cac5"}',
+      },
+    ],
   ],
 
   sitemap: {
