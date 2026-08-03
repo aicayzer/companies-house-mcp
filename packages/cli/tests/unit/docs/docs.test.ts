@@ -87,6 +87,23 @@ describe('prose documentation', () => {
     }
   );
 
+  // A hardcoded "18 tools" is the easiest claim in the project to falsify by
+  // adding a tool, and the least likely to be noticed.
+  it.each([
+    'README.md',
+    'docs/mcp.md',
+    'docs/index.md',
+    'packages/mcp/README.md',
+    'packages/cli/README.md',
+    'server.json',
+    'CLAUDE.md',
+  ])('%s states the right number of tools', path => {
+    const expected = toolNames().length;
+    const claims = [...repoFile(path).matchAll(/(\d+)\s+tools\b/gi)].map(match => Number(match[1]));
+    const wrong = claims.filter(claimed => claimed !== expected);
+    expect(wrong, `${path} claims ${wrong.join(', ')} tools; there are ${expected}`).toEqual([]);
+  });
+
   it('the CLI reference lists every command the CLI actually has', () => {
     const content = repoFile('docs/cli.md');
     const missing = COMMANDS.filter(command => !content.includes(`ch ${command.name}`));

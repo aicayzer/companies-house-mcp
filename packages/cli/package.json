@@ -1,7 +1,7 @@
 {
   "name": "companies-house-cli",
   "version": "2.0.0",
-  "description": "CLI tool for the UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
+  "description": "CLI for the UK Companies House public register — company search, records, officers, ownership, filings and filed documents. Bring your own free API key.",
   "type": "module",
   "exports": {
     "./mcp": "./dist/server/mcp.js",
@@ -25,7 +25,7 @@
     "format": "prettier --write src/ tests/",
     "format:check": "prettier --check src/ tests/",
     "clean": "rm -rf dist/ *.tsbuildinfo",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "prepublishOnly": "pnpm run build && pnpm test"
   },
   "keywords": [
