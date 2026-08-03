@@ -1,56 +1,57 @@
 # Getting started
 
-## Get an API key
+## 1. Get an API key
 
-Register at [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) — free, takes about 30 seconds. You'll need the key for both the CLI and the MCP server.
+Register at [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/). It is free and takes about a minute.
 
-## CLI
+You will need the key for everything below. Nobody else's key will do — this project has no shared key and no hosted backend.
 
-Install the `ch` binary globally:
+## 2. Choose how you want to use it
+
+### In an AI assistant
+
+Add the MCP server to your client's config. For Claude Code:
+
+```bash
+claude mcp add companies-house -e COMPANIES_HOUSE_API_KEY=your-key-here -- npx -y companies-house-mcp
+```
+
+Then ask it something:
+
+> Look up Tesco on Companies House and tell me who the current directors are.
+
+Setup for Claude Desktop, Codex, Cursor and Zed is in [MCP setup](/mcp).
+
+### In the terminal
 
 ```bash
 npm install -g companies-house-cli
 ch config set-key your-key-here
 ```
 
-Test it:
+Try it:
 
 ```bash
-ch search "Anthropic"
-ch profile 14604577
-ch report 14604577
+ch search "Tesco"
+ch profile 00445790
+ch report 00445790
 ```
 
-Full CLI reference in [CLI →](/cli).
+The [CLI reference](/cli) has every command.
 
-## MCP server
+### On your own server
 
-The MCP server connects AI assistants (Codex, Claude, Cursor, Zed) to 18 tools backed by your own Companies House API key. It supports legacy MCP clients alongside protocol version `2026-07-28`.
+If you want a remote MCP server that Claude Code can reach from anywhere, deploy the Cloudflare Worker into your own account. It uses your key and a bearer token you choose. See the [Worker guide](https://github.com/aicayzer/companies-house-mcp/tree/main/packages/worker).
 
-The quickest setup — add this to your client's config:
+## 3. Know what you are reading
 
-```json
-{
-  "mcpServers": {
-    "companies-house": {
-      "command": "npx",
-      "args": ["-y", "companies-house-mcp"],
-      "env": {
-        "COMPANIES_HOUSE_API_KEY": "your-key-here"
-      }
-    }
-  }
-}
-```
+Companies numbers are eight characters, zero-padded:
 
-Client-specific instructions in [MCP setup →](/mcp).
+- `00445790` — Tesco PLC
+- `14604577` — Anthropic Limited
+- `SC311560` — a Scottish company
+- `NI012345` — Northern Ireland, `OC301234` — an LLP, `FC012345` — an overseas company
 
-## Company numbers
+Shorter all-digit numbers are padded for you, so `445790` works. If you only know the name, search first.
 
-Companies House identifies companies by number — an 8-digit, zero-padded string:
-
-- `14604577` — Anthropic Ltd
-- `00445790` — Marks and Spencer
-- `SC123456` — Scottish companies use the `SC` prefix
-
-If you only know the company name, use `ch search` or the `search_companies` tool to find the number first.
+Companies House records what companies file. It does not verify that what they filed is true. That shapes everything these tools can tell you — see [what the register does not tell you](/tools#what-the-register-does-not-tell-you).

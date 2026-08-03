@@ -8,7 +8,7 @@ startCommand:
       apiKey:
         type: string
         title: API Key
-        description: Free API key from developer.company-information.service.gov.uk
+        description: Your own free API key from developer.company-information.service.gov.uk
   commandFunction: |-
     (config) => ({
       command: "npx",

@@ -6,6 +6,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # The Worker build runs `wrangler deploy --dry-run`, which needs no
+  # Cloudflare credentials. Telemetry is off so CI stays quiet.
+  WRANGLER_SEND_METRICS: false
 
 jobs:
   quality:
@@ -38,6 +41,9 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Build documentation
+        run: pnpm docs:build
 
       - name: Test packaged stdio entry points
         run: pnpm test:package

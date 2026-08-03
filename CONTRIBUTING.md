@@ -20,22 +20,34 @@ pnpm test:unit                                          # no API key needed
 COMPANIES_HOUSE_API_KEY=your-key pnpm test:integration  # hits the live API
 ```
 
-Unit tests cover the API client, cache, rate limiter, tool registry, MCP transports, and formatters. Integration tests exercise representative tools and empty-data behaviour against the real Companies House API.
+Unit tests cover the API client, cache, rate limiter, pagination, tool registry, tool behaviour, MCP transports, formatters, the Worker and the documentation. Integration tests exercise representative tools, absent-record behaviour and a real document download against the live API.
+
+`docs/tools.md` and `docs/public/llms.txt` are generated from the tool registry, and a unit test fails when they drift. After changing a tool's name, description or parameters:
+
+```bash
+UPDATE_DOCS=1 pnpm test:unit
+```
+
+The same test checks that the prose documentation mentions every tool and mentions no tool that does not exist. When it fails, the documentation is wrong, not the test.
 
 ## Project structure
 
 ```
 packages/
-  cli/   → companies-house-cli: API client, CLI, MCP factory and runner, 18 tools
-  mcp/   → companies-house-mcp: thin wrapper that starts the shared MCP server
+  cli/      → companies-house-cli: API client, CLI, MCP factory and runner, 18 tools
+  mcp/      → companies-house-mcp: thin wrapper that starts the shared MCP server
+  worker/   → optional single-user Cloudflare Worker (private, not published)
 ```
 
-All shared implementation lives in `packages/cli/src/`. The MCP package supplies its own package identity and starts the transport-neutral server exported by the CLI package.
+All shared implementation lives in `packages/cli/src/`. The MCP package supplies its own identity and starts the transport-neutral server the CLI package exports. The Worker does the same over HTTP.
+
+Code shared with the Worker has to stay runtime-neutral: web-standard APIs, no `Buffer`, and no static `node:` imports. Node-only work belongs in `server/index.ts`, `config.ts`, or behind a dynamic import.
 
 ## Making changes
 
 - One logical change per PR
-- Run `pnpm lint && pnpm typecheck && pnpm test:unit` before pushing
+- Run `pnpm lint && pnpm typecheck && pnpm build && pnpm test:unit` before pushing
+- Keep product language truthful: nothing may read as verification, a credit check, a sanctions screening or a clearance decision
 - Follow the existing code style — TypeScript, ESM, snake_case for API types
 - Add or update tests for non-trivial logic changes
 
