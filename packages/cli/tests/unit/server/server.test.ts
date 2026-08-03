@@ -11,7 +11,8 @@ import {
   isLoopbackHost,
   parseServerArguments,
   runServer,
-  safeStringEqual,
+  secretsMatch,
+  readBearerToken,
   type RunningServer,
 } from '../../../src/server/index.js';
 import { createCompaniesHouseMcpFactory } from '../../../src/server/mcp.js';
@@ -140,10 +141,20 @@ describe('server authentication helpers', () => {
     expect(isLoopbackHost('example.com')).toBe(false);
   });
 
-  it('compares bearer tokens safely', () => {
-    expect(safeStringEqual('same-secret', 'same-secret')).toBe(true);
-    expect(safeStringEqual('same-secret', 'other-value')).toBe(false);
-    expect(safeStringEqual('short', 'a-much-longer-secret')).toBe(false);
+  it('compares bearer tokens safely', async () => {
+    await expect(secretsMatch('same-secret', 'same-secret')).resolves.toBe(true);
+    await expect(secretsMatch('same-secret', 'other-value')).resolves.toBe(false);
+    await expect(secretsMatch('short', 'a-much-longer-secret')).resolves.toBe(false);
+    // A correct prefix must not pass.
+    await expect(secretsMatch('same-secre', 'same-secret')).resolves.toBe(false);
+  });
+
+  it('reads a bearer token case-insensitively and rejects other schemes', () => {
+    expect(readBearerToken('Bearer abc123')).toBe('abc123');
+    expect(readBearerToken('bearer abc123')).toBe('abc123');
+    expect(readBearerToken('Basic abc123')).toBeUndefined();
+    expect(readBearerToken(undefined)).toBeUndefined();
+    expect(readBearerToken(null)).toBeUndefined();
   });
 
   it.each(['MCP_OAUTH_CLIENT_ID', 'MCP_OAUTH_CLIENT_SECRET', 'MCP_PUBLIC_URL'])(
@@ -238,8 +249,8 @@ describe.sequential('HTTP server boundary', () => {
 
     const missing = await fetch(serverUrl(runningServer, '/mcp'), { method: 'POST' });
     expect(missing.status).toBe(401);
-    expect(missing.headers.get('www-authenticate')).toBe('Bearer');
-    expect(await missing.json()).toEqual({ error: 'unauthorized' });
+    expect(missing.headers.get('www-authenticate')).toBe('Bearer error="invalid_token"');
+    expect(await missing.json()).toEqual({ error: 'invalid_token', error_description: 'A valid bearer token is required.' });
 
     const wrong = await fetch(serverUrl(runningServer, '/mcp'), {
       method: 'POST',

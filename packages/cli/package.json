@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./mcp": "./dist/server/mcp.js",
-    "./server": "./dist/server/index.js"
+    "./server": "./dist/server/index.js",
+    "./secret": "./dist/server/secret.js"
   },
   "bin": {
     "ch": "dist/cli/index.js"

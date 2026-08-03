@@ -1,0 +1,43 @@
+{
+  "name": "companies-house-mcp-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Optional single-user Cloudflare Worker that serves the Companies House MCP server over Streamable HTTP",
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "clean": "rm -rf dist/ dist-dryrun/ *.tsbuildinfo",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write src/ tests/",
+    "format:check": "prettier --check src/ tests/",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail",
+    "secrets": "wrangler secret list"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "companies-house-cli": "workspace:^2.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260801.1",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@types/node": "^22.20.1",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/parser": "^8.66.0",
+    "eslint": "^9.39.5",
+    "globals": "^14.0.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7",
+    "wrangler": "^4.118.0"
+  }
+}

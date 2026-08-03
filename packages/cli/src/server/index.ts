@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type Server as HttpServer } from 'node:http';
 import { isIP } from 'node:net';
 import type { AddressInfo } from 'node:net';
@@ -12,9 +11,11 @@ import { serveStdio, type StdioServerHandle } from '@modelcontextprotocol/server
 import { resolveApiKey } from '../config.js';
 import { getAllTools } from '../tools/registry.js';
 import { createCompaniesHouseMcpFactory } from './mcp.js';
+import { isAuthorised } from './secret.js';
 
 export { createCompaniesHouseMcpFactory } from './mcp.js';
 export type { CompaniesHouseMcpFactoryOptions } from './mcp.js';
+export { secretsMatch, readBearerToken, isAuthorised } from './secret.js';
 
 export const MCP_PROTOCOLS = ['legacy', '2026-07-28'] as const;
 
@@ -44,17 +45,6 @@ export interface ServerArguments {
   mode: 'stdio' | 'http';
   host: string;
   port: number;
-}
-
-/** Compare secrets without leaking the location of a mismatch. */
-export function safeStringEqual(actual: string, expected: string): boolean {
-  const actualBytes = Buffer.from(actual, 'utf8');
-  const expectedBytes = Buffer.from(expected, 'utf8');
-  const actualHash = createHash('sha256').update(actualBytes).digest();
-  const expectedHash = createHash('sha256').update(expectedBytes).digest();
-  const hashesEqual = timingSafeEqual(actualHash, expectedHash);
-
-  return hashesEqual && actualBytes.length === expectedBytes.length;
 }
 
 export function isLoopbackHost(host: string): boolean {
@@ -260,12 +250,16 @@ async function startHttpServer(
       return;
     }
 
-    if (bearerToken) {
-      const match = req.headers.authorization?.match(/^Bearer\s+(.+)$/i);
-      if (!match?.[1] || !safeStringEqual(match[1], bearerToken)) {
-        writeJson(res, 401, { error: 'unauthorized' }, { 'WWW-Authenticate': 'Bearer' });
-        return;
-      }
+    // The gate sits at the HTTP layer. A 200 carrying a tool error would read
+    // to a client as an ordinary tool failure and never prompt for credentials.
+    if (bearerToken && !(await isAuthorised(req.headers.authorization, bearerToken))) {
+      writeJson(
+        res,
+        401,
+        { error: 'invalid_token', error_description: 'A valid bearer token is required.' },
+        { 'WWW-Authenticate': 'Bearer error="invalid_token"' }
+      );
+      return;
     }
 
     await handleMcpRequest(req, res);

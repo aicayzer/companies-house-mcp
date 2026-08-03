@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "companies-house-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-03",
+  // The shared tool code reaches for node:fs/promises only when a caller asks
+  // the document tool to write a file. The flag lets that import resolve; the
+  // Worker itself never writes to disk.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "logs": { "enabled": true }
+  },
+  // Secrets are set with `wrangler secret put` and are never listed here:
+  // COMPANIES_HOUSE_API_KEY and MCP_BEARER_TOKEN.
+  "vars": {}
+}

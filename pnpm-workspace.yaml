@@ -1,3 +1,15 @@
 packages:
   - 'packages/cli'
   - 'packages/mcp'
+  - 'packages/worker'
+
+# esbuild and workerd install platform binaries through postinstall scripts.
+# Without an explicit decision pnpm skips them, warns on every install, and
+# wrangler cannot start the Workers runtime. `allowBuilds` is the pnpm 11 key;
+# `onlyBuiltDependencies` keeps pnpm 10 (used in CI) doing the same thing.
+allowBuilds:
+  esbuild: true
+  workerd: true
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
