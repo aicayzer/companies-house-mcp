@@ -172,7 +172,12 @@ export const REGISTER_LIMITATIONS = [
 ] as const;
 
 export function limitationLines(): string[] {
-  return ['### What this does not tell you', '', ...REGISTER_LIMITATIONS.map(line => `- ${line}`), ''];
+  return [
+    '### What this does not tell you',
+    '',
+    ...REGISTER_LIMITATIONS.map(line => `- ${line}`),
+    '',
+  ];
 }
 
 // ---------------------------------------------------------------------------

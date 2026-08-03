@@ -71,11 +71,7 @@ function unwrap(schema: ZodInternals): {
     };
   }
   const kind: ParameterKind =
-    type === 'number' || type === 'int'
-      ? 'number'
-      : type === 'boolean'
-        ? 'boolean'
-        : 'string';
+    type === 'number' || type === 'int' ? 'number' : type === 'boolean' ? 'boolean' : 'string';
   return { kind, required, defaultValue };
 }
 

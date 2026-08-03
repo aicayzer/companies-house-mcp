@@ -45,12 +45,7 @@ import {
 } from '../formatters/index.js';
 import { explainAbsentPSCs, formatPSCStatements } from './ownership.js';
 import { collectPages } from '../api/paginate.js';
-import {
-  companyNumberSchema,
-  officerIdSchema,
-  pageSizeSchema,
-  MAX_AUTO_PAGES,
-} from './shared.js';
+import { companyNumberSchema, officerIdSchema, pageSizeSchema, MAX_AUTO_PAGES } from './shared.js';
 import type { APIClient } from '../api/client.js';
 import type { CompanyProfile, OfficerAppointment } from '../types/index.js';
 
@@ -250,16 +245,18 @@ registerTool({
         });
       } else {
         sections.push('Filing history could not be retrieved for this request.');
-        coverage.push({ resource: 'Filing history', status: 'unavailable', note: 'request failed' });
+        coverage.push({
+          resource: 'Filing history',
+          status: 'unavailable',
+          note: 'request failed',
+        });
       }
 
       // ---- Insolvency
       sections.push('\n---\n## Insolvency\n');
       if (insolvency.status === 'fulfilled' && insolvency.value) {
         const cases = insolvency.value.cases ?? [];
-        sections.push(
-          cases.length ? formatInsolvency(cases) : 'No insolvency cases are recorded.'
-        );
+        sections.push(cases.length ? formatInsolvency(cases) : 'No insolvency cases are recorded.');
         structured.insolvency = insolvency.value;
         coverage.push({ resource: 'Insolvency', status: 'complete', retrieved: cases.length });
       } else if (insolvency.status === 'fulfilled' || isNotFound(insolvency.reason)) {
@@ -662,7 +659,9 @@ registerTool({
           if (!group.length) continue;
           lines.push(`#### ${heading}`, '');
           for (const observation of group) {
-            lines.push(`- **${observation.category}:** ${observation.detail} _(${observation.source})_`);
+            lines.push(
+              `- **${observation.category}:** ${observation.detail} _(${observation.source})_`
+            );
           }
           lines.push('');
         }

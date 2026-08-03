@@ -80,8 +80,7 @@ const PSC_STATEMENT_LABELS: Record<string, string> = {
   'psc-details-not-confirmed': "A PSC's details have not been confirmed.",
   'psc-contacted-but-no-response': 'A PSC has been contacted but has not responded.',
   'restrictions-notice-issued-to-psc': 'A restrictions notice has been issued to a PSC.',
-  'psc-has-failed-to-confirm-changed-details':
-    'A PSC has failed to confirm changed details.',
+  'psc-has-failed-to-confirm-changed-details': 'A PSC has failed to confirm changed details.',
   'psc-details-not-confirmed-by-company': 'PSC details have not been confirmed by the company.',
   'all-beneficial-owners-identified': 'All beneficial owners have been identified.',
   'no-individual-or-entity-with-signficant-control-partnership':

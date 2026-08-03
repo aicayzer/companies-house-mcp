@@ -42,9 +42,9 @@ describe('chargeCounts', () => {
 
 describe('formatPagination', () => {
   it('tells the caller how to request the next page', () => {
-    expect(formatPagination({ start_index: 0, items_per_page: 20, returned: 20, total: 143 })).toContain(
-      'start_index: 20'
-    );
+    expect(
+      formatPagination({ start_index: 0, items_per_page: 20, returned: 20, total: 143 })
+    ).toContain('start_index: 20');
   });
 
   it('says when a page is the last one', () => {
@@ -54,7 +54,9 @@ describe('formatPagination', () => {
   });
 
   it('says nothing for an empty result', () => {
-    expect(formatPagination({ start_index: 0, items_per_page: 20, returned: 0, total: 0 })).toBe('');
+    expect(formatPagination({ start_index: 0, items_per_page: 20, returned: 0, total: 0 })).toBe(
+      ''
+    );
   });
 });
 
@@ -157,14 +159,18 @@ describe('officer_network disambiguation', () => {
       throw new CompaniesHouseAPIError('should not be called', 500, path);
     });
 
-    const result = await getTool('officer_network')!.execute(client, { officer_name: 'John Smith' });
+    const result = await getTool('officer_network')!.execute(client, {
+      officer_name: 'John Smith',
+    });
 
     expect(result.isError).toBeFalsy();
     expect(result.structuredContent?.ambiguous).toBe(true);
     expect(textOf(result)).toContain('no network was produced');
     // It must not have gone on to fetch appointments for an arbitrary match.
     expect(
-      vi.mocked(client.get).mock.calls.every(([path]) => !(path as string).includes('/appointments'))
+      vi
+        .mocked(client.get)
+        .mock.calls.every(([path]) => !(path as string).includes('/appointments'))
     ).toBe(true);
   });
 });

@@ -139,7 +139,10 @@ function printCommandUsage(command: CommandDefinition): void {
   const positionalSet = new Set(command.positionals);
   const aliasesByParameter = new Map<string, string[]>();
   for (const [alias, parameterName] of Object.entries(command.aliases ?? {})) {
-    aliasesByParameter.set(parameterName, [...(aliasesByParameter.get(parameterName) ?? []), alias]);
+    aliasesByParameter.set(parameterName, [
+      ...(aliasesByParameter.get(parameterName) ?? []),
+      alias,
+    ]);
   }
 
   const argumentSignature = command.positionals
@@ -165,7 +168,10 @@ function printCommandUsage(command: CommandDefinition): void {
     lines.push('Flags:');
     for (const parameter of flagParameters) {
       const names = [
-        ...new Set([parameterFlag(parameter.name), ...(aliasesByParameter.get(parameter.name) ?? [])]),
+        ...new Set([
+          parameterFlag(parameter.name),
+          ...(aliasesByParameter.get(parameter.name) ?? []),
+        ]),
       ];
       const value =
         parameter.kind === 'boolean'
@@ -259,7 +265,8 @@ function parseCommandArguments(
 
       if (parameter.kind === 'number') {
         const parsed = Number(value);
-        if (!Number.isFinite(parsed)) fail(`${flagName} needs a number, got "${value}".`, EXIT_USAGE);
+        if (!Number.isFinite(parsed))
+          fail(`${flagName} needs a number, got "${value}".`, EXIT_USAGE);
         params[parameter.name] = parsed;
       } else {
         if (parameter.choices && !parameter.choices.includes(value)) {
@@ -332,9 +339,7 @@ function handleConfigCommand(args: string[]): void {
   if (subcommand === 'clear') {
     const removed = clearApiKey();
     console.log(
-      removed
-        ? `Removed the saved API key from ${getConfigPath()}.`
-        : 'No saved API key to remove.'
+      removed ? `Removed the saved API key from ${getConfigPath()}.` : 'No saved API key to remove.'
     );
     return;
   }

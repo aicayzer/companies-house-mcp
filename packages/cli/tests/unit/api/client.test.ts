@@ -139,10 +139,18 @@ describe('CompaniesHouseAPIError', () => {
   it('keeps the upstream body only where it explains something', () => {
     // A 404 body is a timestamp and a request id; a 400 body says what was
     // wrong with the request.
-    const notFound = CompaniesHouseAPIError.fromResponse(404, '/x', '{"timestamp":"...","message":"..."}');
+    const notFound = CompaniesHouseAPIError.fromResponse(
+      404,
+      '/x',
+      '{"timestamp":"...","message":"..."}'
+    );
     expect(notFound.message).not.toContain('timestamp');
 
-    const badRequest = CompaniesHouseAPIError.fromResponse(400, '/x', '{"error":"invalid start_index"}');
+    const badRequest = CompaniesHouseAPIError.fromResponse(
+      400,
+      '/x',
+      '{"error":"invalid start_index"}'
+    );
     expect(badRequest.message).toContain('invalid start_index');
   });
 

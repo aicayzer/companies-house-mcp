@@ -15,7 +15,8 @@ const GENERATED_NOTICE =
   '<!-- Generated from the tool registry. Run `UPDATE_DOCS=1 pnpm test:unit` to regenerate. Do not edit by hand. -->';
 
 function parameterType(parameter: ToolParameter): string {
-  if (parameter.kind === 'enum') return parameter.choices?.map(c => `\`${c}\``).join(' \\| ') ?? 'string';
+  if (parameter.kind === 'enum')
+    return parameter.choices?.map(c => `\`${c}\``).join(' \\| ') ?? 'string';
   return parameter.kind;
 }
 
@@ -140,7 +141,7 @@ export function generateLlmsTxt(): string {
     '## Source',
     '',
     'https://github.com/aicayzer/companies-house-mcp',
-    '',
+    ''
   );
 
   return lines.join('\n');

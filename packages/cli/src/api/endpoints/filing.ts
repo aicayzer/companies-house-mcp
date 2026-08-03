@@ -1,6 +1,10 @@
 import type { APIClient } from '../client.js';
 import { CACHE_TTLS } from '../client.js';
-import type { FilingHistoryList, FilingHistoryParams, FilingHistoryItem } from '../../types/index.js';
+import type {
+  FilingHistoryList,
+  FilingHistoryParams,
+  FilingHistoryItem,
+} from '../../types/index.js';
 
 export function getFilingHistory(
   client: APIClient,

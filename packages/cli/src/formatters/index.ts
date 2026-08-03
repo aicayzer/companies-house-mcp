@@ -106,21 +106,24 @@ export function formatCompanyType(type: string): string {
     plc: 'Public Limited Company',
     'old-public-company': 'Old Public Company',
     'private-unlimited': 'Private Unlimited Company',
-    'private-limited-guarant-nsc-limited-exemption': 'Private Limited by Guarantee (No Share Capital, Exempt)',
+    'private-limited-guarant-nsc-limited-exemption':
+      'Private Limited by Guarantee (No Share Capital, Exempt)',
     'private-limited-guarant-nsc': 'Private Limited by Guarantee (No Share Capital)',
     'private-limited-shares-section-30-exemption': 'Private Limited by Shares (Section 30 Exempt)',
     'private-unlimited-nsc': 'Private Unlimited (No Share Capital)',
     llp: 'Limited Liability Partnership',
     'scottish-partnership': 'Scottish Partnership',
     'charitable-incorporated-organisation': 'Charitable Incorporated Organisation',
-    'scottish-charitable-incorporated-organisation': 'Scottish Charitable Incorporated Organisation',
+    'scottish-charitable-incorporated-organisation':
+      'Scottish Charitable Incorporated Organisation',
     'industrial-and-provident-society': 'Industrial and Provident Society',
     'registered-society-non-jurisdictional': 'Registered Society',
     'royal-charter': 'Royal Charter Company',
     'investment-company-with-variable-capital': 'Investment Company with Variable Capital',
     'unregistered-company': 'Unregistered Company',
     'registered-overseas-entity': 'Registered Overseas Entity',
-    'european-public-limited-liability-company-se': 'European Public Limited Liability Company (SE)',
+    'european-public-limited-liability-company-se':
+      'European Public Limited Liability Company (SE)',
   };
   return typeMap[type] ?? type;
 }
@@ -168,14 +171,20 @@ export function formatNatureOfControl(nature: string): string {
     'voting-rights-50-to-75-percent-as-firm': 'Holds 50-75% of voting rights (as firm)',
     'voting-rights-75-to-100-percent-as-firm': 'Holds 75-100% of voting rights (as firm)',
     'right-to-appoint-and-remove-directors': 'Right to appoint and remove directors',
-    'right-to-appoint-and-remove-directors-as-trust': 'Right to appoint and remove directors (held in trust)',
-    'right-to-appoint-and-remove-directors-as-firm': 'Right to appoint and remove directors (as firm)',
+    'right-to-appoint-and-remove-directors-as-trust':
+      'Right to appoint and remove directors (held in trust)',
+    'right-to-appoint-and-remove-directors-as-firm':
+      'Right to appoint and remove directors (as firm)',
     'significant-influence-or-control': 'Has significant influence or control',
-    'significant-influence-or-control-as-trust': 'Has significant influence or control (held in trust)',
+    'significant-influence-or-control-as-trust':
+      'Has significant influence or control (held in trust)',
     'significant-influence-or-control-as-firm': 'Has significant influence or control (as firm)',
-    'right-to-share-surplus-assets-25-to-50-percent-limited-liability-partnership': 'Right to 25-50% surplus assets (LLP)',
-    'right-to-share-surplus-assets-50-to-75-percent-limited-liability-partnership': 'Right to 50-75% surplus assets (LLP)',
-    'right-to-share-surplus-assets-75-to-100-percent-limited-liability-partnership': 'Right to 75-100% surplus assets (LLP)',
+    'right-to-share-surplus-assets-25-to-50-percent-limited-liability-partnership':
+      'Right to 25-50% surplus assets (LLP)',
+    'right-to-share-surplus-assets-50-to-75-percent-limited-liability-partnership':
+      'Right to 50-75% surplus assets (LLP)',
+    'right-to-share-surplus-assets-75-to-100-percent-limited-liability-partnership':
+      'Right to 75-100% surplus assets (LLP)',
   };
   return controlMap[nature] ?? nature.replace(/-/g, ' ');
 }
@@ -223,11 +232,15 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
   if (profile.accounts) {
     const overdue = accountsOverdue(profile);
     const hasAccountsData =
-      profile.accounts.last_accounts?.made_up_to || profile.accounts.next_accounts?.due_on || overdue;
+      profile.accounts.last_accounts?.made_up_to ||
+      profile.accounts.next_accounts?.due_on ||
+      overdue;
     if (hasAccountsData) {
       lines.push('', '### Accounts');
       if (profile.accounts.last_accounts?.made_up_to) {
-        lines.push(`- Last accounts made up to: ${formatDate(profile.accounts.last_accounts.made_up_to)}`);
+        lines.push(
+          `- Last accounts made up to: ${formatDate(profile.accounts.last_accounts.made_up_to)}`
+        );
       }
       if (profile.accounts.next_accounts?.due_on) {
         lines.push(`- Next accounts due: ${formatDate(profile.accounts.next_accounts.due_on)}`);
@@ -241,7 +254,9 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
   if (profile.confirmation_statement) {
     lines.push('', '### Confirmation Statement');
     if (profile.confirmation_statement.last_made_up_to) {
-      lines.push(`- Last made up to: ${formatDate(profile.confirmation_statement.last_made_up_to)}`);
+      lines.push(
+        `- Last made up to: ${formatDate(profile.confirmation_statement.last_made_up_to)}`
+      );
     }
     if (profile.confirmation_statement.next_due) {
       lines.push(`- Next due: ${formatDate(profile.confirmation_statement.next_due)}`);
@@ -254,7 +269,9 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
   if (profile.previous_company_names?.length) {
     lines.push('', '### Previous Names');
     for (const prev of profile.previous_company_names) {
-      lines.push(`- ${prev.name} (${formatDate(prev.effective_from)} to ${formatDate(prev.ceased_on)})`);
+      lines.push(
+        `- ${prev.name} (${formatDate(prev.effective_from)} to ${formatDate(prev.ceased_on)})`
+      );
     }
   }
 
@@ -290,7 +307,8 @@ export function formatCompanySearchResults(items: CompanySearchItem[], total: nu
     lines.push(`- **Number:** ${item.company_number}`);
     lines.push(`- **Status:** ${formatCompanyStatus(item.company_status)}`);
     lines.push(`- **Type:** ${formatCompanyType(item.company_type)}`);
-    if (item.date_of_creation) lines.push(`- **Incorporated:** ${formatDate(item.date_of_creation)}`);
+    if (item.date_of_creation)
+      lines.push(`- **Incorporated:** ${formatDate(item.date_of_creation)}`);
     if (item.address_snippet) lines.push(`- **Address:** ${item.address_snippet}`);
     lines.push('');
   }
@@ -514,7 +532,11 @@ export function formatOfficerSearchResults(items: OfficerSearchItem[], total: nu
   return lines.join('\n');
 }
 
-export function formatAppointments(items: OfficerAppointment[], total: number, name?: string): string {
+export function formatAppointments(
+  items: OfficerAppointment[],
+  total: number,
+  name?: string
+): string {
   if (!items.length) return 'No appointments found.';
   const header = name ? `${total} appointment(s) for ${name}:` : `${total} appointment(s):`;
   const lines = [header, ''];

@@ -17,10 +17,7 @@ import type { CompanySearchResponse } from '../types/index.js';
 
 // ── search_companies ────────────────────────────────────────────────────
 const searchCompaniesShape = {
-  query: z
-    .string()
-    .min(1)
-    .describe('Company name, or part of one. Also accepts a company number.'),
+  query: z.string().min(1).describe('Company name, or part of one. Also accepts a company number.'),
   items_per_page: pageSizeSchema(20),
   start_index: searchStartIndexSchema,
   company_status: z
@@ -29,7 +26,10 @@ const searchCompaniesShape = {
     .describe(
       'Restrict to a register status: active, dissolved, liquidation, receivership, administration, voluntary-arrangement, converted-closed, insolvency-proceedings.'
     ),
-  company_type: z.string().optional().describe('Restrict to a company type: ltd, plc, llp, and so on.'),
+  company_type: z
+    .string()
+    .optional()
+    .describe('Restrict to a company type: ltd, plc, llp, and so on.'),
   incorporated_from: z.string().optional().describe('Earliest incorporation date, YYYY-MM-DD.'),
   incorporated_to: z.string().optional().describe('Latest incorporation date, YYYY-MM-DD.'),
   location: z.string().optional().describe('Restrict to a registered office location.'),
@@ -49,11 +49,11 @@ registerTool({
     const input = searchCompaniesSchema.parse(params);
     const hasAdvancedFilters = Boolean(
       input.company_status ||
-        input.company_type ||
-        input.incorporated_from ||
-        input.incorporated_to ||
-        input.location ||
-        input.sic_codes
+      input.company_type ||
+      input.incorporated_from ||
+      input.incorporated_to ||
+      input.location ||
+      input.sic_codes
     );
 
     try {
@@ -83,7 +83,9 @@ registerTool({
             title: item.title || (itemRecord.company_name as string) || 'Unknown',
             address_snippet:
               item.address_snippet ||
-              formatAddress(itemRecord.registered_office_address as Record<string, string> | undefined),
+              formatAddress(
+                itemRecord.registered_office_address as Record<string, string> | undefined
+              ),
           };
         });
         result = { ...advanced, items, total_results: totalResults };

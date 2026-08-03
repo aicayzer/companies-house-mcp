@@ -81,10 +81,18 @@ describe('formatOfficerRole', () => {
 
 describe('formatNatureOfControl', () => {
   it('translates control codes to plain English', () => {
-    expect(formatNatureOfControl('ownership-of-shares-25-to-50-percent')).toBe('Owns 25-50% of shares');
-    expect(formatNatureOfControl('voting-rights-75-to-100-percent')).toBe('Holds 75-100% of voting rights');
-    expect(formatNatureOfControl('right-to-appoint-and-remove-directors')).toBe('Right to appoint and remove directors');
-    expect(formatNatureOfControl('significant-influence-or-control')).toBe('Has significant influence or control');
+    expect(formatNatureOfControl('ownership-of-shares-25-to-50-percent')).toBe(
+      'Owns 25-50% of shares'
+    );
+    expect(formatNatureOfControl('voting-rights-75-to-100-percent')).toBe(
+      'Holds 75-100% of voting rights'
+    );
+    expect(formatNatureOfControl('right-to-appoint-and-remove-directors')).toBe(
+      'Right to appoint and remove directors'
+    );
+    expect(formatNatureOfControl('significant-influence-or-control')).toBe(
+      'Has significant influence or control'
+    );
   });
 
   it('falls back to hyphen-replaced string for unknown codes', () => {

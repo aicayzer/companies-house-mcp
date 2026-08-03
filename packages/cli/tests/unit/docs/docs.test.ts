@@ -114,7 +114,10 @@ describe('prose documentation', () => {
 describe('command table', () => {
   it('maps every command to a registered tool', () => {
     for (const command of COMMANDS) {
-      expect(getTool(command.tool), `${command.name} maps to unknown tool ${command.tool}`).toBeDefined();
+      expect(
+        getTool(command.tool),
+        `${command.name} maps to unknown tool ${command.tool}`
+      ).toBeDefined();
     }
   });
 

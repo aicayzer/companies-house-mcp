@@ -5,9 +5,9 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import worker, { type Env } from '../src/index.js';
 import { WORKER_VERSION } from '../src/version.js';
 
-const manifest = JSON.parse(
-  readFileSync(new URL('../package.json', import.meta.url), 'utf8')
-) as { version: string };
+const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+  version: string;
+};
 
 const TOKEN = 'a-long-random-bearer-token-for-tests';
 const env: Env = {
@@ -15,10 +15,7 @@ const env: Env = {
   MCP_BEARER_TOKEN: TOKEN,
 };
 
-function request(
-  path: string,
-  init: RequestInit & { token?: string } = {}
-): Request {
+function request(path: string, init: RequestInit & { token?: string } = {}): Request {
   const { token, ...rest } = init;
   const headers = new Headers(rest.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);

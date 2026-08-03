@@ -250,7 +250,10 @@ describe.sequential('HTTP server boundary', () => {
     const missing = await fetch(serverUrl(runningServer, '/mcp'), { method: 'POST' });
     expect(missing.status).toBe(401);
     expect(missing.headers.get('www-authenticate')).toBe('Bearer error="invalid_token"');
-    expect(await missing.json()).toEqual({ error: 'invalid_token', error_description: 'A valid bearer token is required.' });
+    expect(await missing.json()).toEqual({
+      error: 'invalid_token',
+      error_description: 'A valid bearer token is required.',
+    });
 
     const wrong = await fetch(serverUrl(runningServer, '/mcp'), {
       method: 'POST',

@@ -129,12 +129,15 @@ describe('Tool execution errors', () => {
     // "Check the company number" is misleading when the key was rejected.
     for (const status of [401, 403, 429, 500]) {
       const other = await getTool('get_company_profile')!.execute(
-        createRejectingClient(new CompaniesHouseAPIError('Upstream said no.', status, '/company/1')),
+        createRejectingClient(
+          new CompaniesHouseAPIError('Upstream said no.', status, '/company/1')
+        ),
         { company_number: '12345678' }
       );
-      expect(textOf(other), `status ${status} should not suggest checking the number`).not.toContain(
-        'search_companies'
-      );
+      expect(
+        textOf(other),
+        `status ${status} should not suggest checking the number`
+      ).not.toContain('search_companies');
     }
   });
 

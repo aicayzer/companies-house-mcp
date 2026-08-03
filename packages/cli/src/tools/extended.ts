@@ -13,7 +13,12 @@ import {
   getCorporateDisqualification,
 } from '../api/endpoints/officers.js';
 import { getFilingItem } from '../api/endpoints/filing.js';
-import { formatDate, formatAddress, formatCompanyStatus, filingDocumentId } from '../formatters/index.js';
+import {
+  formatDate,
+  formatAddress,
+  formatCompanyStatus,
+  filingDocumentId,
+} from '../formatters/index.js';
 import { companyNumberSchema, officerIdSchema } from './shared.js';
 import type { APIClient } from '../api/client.js';
 
@@ -156,7 +161,9 @@ const disqualificationsSchema = z.object({
   is_corporate: z
     .boolean()
     .default(false)
-    .describe('Set true for a corporate officer. Default false queries the natural-person register.'),
+    .describe(
+      'Set true for a corporate officer. Default false queries the natural-person register.'
+    ),
 });
 
 registerTool({

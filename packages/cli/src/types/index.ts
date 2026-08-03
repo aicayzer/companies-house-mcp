@@ -20,8 +20,18 @@ export interface PreviousCompanyName {
 
 export interface AccountsDates {
   accounting_reference_date?: { month: string; day: string };
-  last_accounts?: { made_up_to?: string; type?: string; period_start_on?: string; period_end_on?: string };
-  next_accounts?: { due_on?: string; period_start_on?: string; period_end_on?: string; overdue?: boolean };
+  last_accounts?: {
+    made_up_to?: string;
+    type?: string;
+    period_start_on?: string;
+    period_end_on?: string;
+  };
+  next_accounts?: {
+    due_on?: string;
+    period_start_on?: string;
+    period_end_on?: string;
+    overdue?: boolean;
+  };
   next_due?: string;
   next_made_up_to?: string;
   overdue?: boolean;
@@ -232,9 +242,20 @@ export interface Charge {
   created_on?: string;
   delivered_on?: string;
   satisfied_on?: string;
-  particulars?: { type?: string; description?: string; contains_negative_pledge?: boolean; contains_fixed_charge?: boolean; contains_floating_charge?: boolean; floating_charge_covers_all?: boolean };
+  particulars?: {
+    type?: string;
+    description?: string;
+    contains_negative_pledge?: boolean;
+    contains_fixed_charge?: boolean;
+    contains_floating_charge?: boolean;
+    floating_charge_covers_all?: boolean;
+  };
   persons_entitled?: Array<{ name: string }>;
-  transactions?: Array<{ filing_type?: string; delivered_on?: string; links?: Record<string, string> }>;
+  transactions?: Array<{
+    filing_type?: string;
+    delivered_on?: string;
+    links?: Record<string, string>;
+  }>;
   links?: Record<string, string>;
   etag?: string;
 }
@@ -347,27 +368,33 @@ export interface InsolvencyData {
 export interface CompanyRegisters {
   company_number?: string;
   kind?: string;
-  registers?: Record<string, {
-    register_type: string;
-    items: Array<{
-      register_moved_to: string;
-      moved_on: string;
+  registers?: Record<
+    string,
+    {
+      register_type: string;
+      items: Array<{
+        register_moved_to: string;
+        moved_on: string;
+        links?: Record<string, string>;
+      }>;
       links?: Record<string, string>;
-    }>;
-    links?: Record<string, string>;
-  }>;
+    }
+  >;
   links?: Record<string, string>;
   etag?: string;
 }
 
 export interface ExemptionsData {
-  exemptions?: Record<string, {
-    exemption_type: string;
-    items: Array<{
-      exempt_from: string;
-      exempt_to?: string;
-    }>;
-  }>;
+  exemptions?: Record<
+    string,
+    {
+      exemption_type: string;
+      items: Array<{
+        exempt_from: string;
+        exempt_to?: string;
+      }>;
+    }
+  >;
   kind?: string;
   links?: Record<string, string>;
   etag?: string;

@@ -121,7 +121,11 @@ function documentUri(documentId: string, extension: string): string {
 }
 
 /** Prefer the filename Companies House recorded; fall back to the document id. */
-function documentFilename(metadata: DocumentMetadata, documentId: string, extension: string): string {
+function documentFilename(
+  metadata: DocumentMetadata,
+  documentId: string,
+  extension: string
+): string {
   const recorded = typeof metadata.filename === 'string' ? metadata.filename.trim() : '';
   const base = recorded || documentId;
   const safe = base.replace(/[^A-Za-z0-9._-]/g, '_');
@@ -255,7 +259,8 @@ registerTool({
         }.`,
         'The document is attached to this result as a resource.',
       ];
-      if (savedTo) summaryParts.push(`Also written to ${savedTo} on the machine running this tool.`);
+      if (savedTo)
+        summaryParts.push(`Also written to ${savedTo} on the machine running this tool.`);
       if (payload.save_error) {
         summaryParts.push(
           `Could not write to ${input.save_to}: ${String(payload.save_error)}. The document is still attached above.`

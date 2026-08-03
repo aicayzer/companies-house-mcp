@@ -101,10 +101,7 @@ registerTool({
           cases: [],
         });
       }
-      return makeTextResult(
-        formatInsolvency(cases),
-        result as unknown as Record<string, unknown>
-      );
+      return makeTextResult(formatInsolvency(cases), result as unknown as Record<string, unknown>);
     } catch (err) {
       // Companies House returns 404 for a valid company with no insolvency history.
       if (isNotFound(err)) {

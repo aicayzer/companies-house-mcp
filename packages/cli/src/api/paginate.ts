@@ -56,7 +56,9 @@ export async function collectPages<T>(
   }
 
   const retrievedEverything =
-    total === undefined ? true : startIndex + items.length >= total || isSatisfied?.(items) === true;
+    total === undefined
+      ? true
+      : startIndex + items.length >= total || isSatisfied?.(items) === true;
 
   return { items, total, pagesFetched, complete: retrievedEverything };
 }

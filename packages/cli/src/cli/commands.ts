@@ -25,7 +25,13 @@ export const COMMANDS: CommandDefinition[] = [
     tool: 'search_companies',
     summary: 'Find companies by name',
     positionals: ['query'],
-    aliases: { '--limit': 'items_per_page', '--start': 'start_index', '--status': 'company_status', '--type': 'company_type', '--sic': 'sic_codes' },
+    aliases: {
+      '--limit': 'items_per_page',
+      '--start': 'start_index',
+      '--status': 'company_status',
+      '--type': 'company_type',
+      '--sic': 'sic_codes',
+    },
     examples: ['ch search "Tesco"', 'ch search "brewing" --status active --sic 11050'],
   },
   {
