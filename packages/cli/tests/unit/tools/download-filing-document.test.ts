@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { tmpdir } from 'node:os';
 import { APIClient } from '../../../src/api/client.js';
 import { getTool } from '../../../src/tools/registry.js';
 
@@ -15,54 +14,58 @@ const client = new APIClient({ api_key: 'factory-supplied-key', cache_enabled: f
 
 const FAKE_PDF = Buffer.from('%PDF-1.4 fake content');
 const S3_URL = 'https://s3.amazonaws.com/companies-house-documents/fake-signed-url';
-const MOCK_METADATA = { company_number: '12345678', description: 'Annual accounts' };
+
+function metadataBody(overrides: Record<string, unknown> = {}) {
+  return {
+    company_number: '12345678',
+    filename: '12345678_aa_2026-01-01',
+    pages: 3,
+    resources: { 'application/pdf': { content_length: FAKE_PDF.byteLength } },
+    ...overrides,
+  };
+}
 
 function makeFetchMock({
   metaOk = true,
+  metadata = metadataBody(),
   contentStatus = 302,
   s3Status = 200,
   s3Body = FAKE_PDF,
+  s3ContentType = 'application/pdf',
 }: {
   metaOk?: boolean;
+  metadata?: Record<string, unknown>;
   contentStatus?: number;
   s3Status?: number;
   s3Body?: Buffer;
+  s3ContentType?: string;
 } = {}) {
   return vi.fn(async (url: string) => {
     const u = typeof url === 'string' ? url : String(url);
 
-    // Metadata endpoint
     if (u.includes('/document/') && !u.includes('/content')) {
       if (!metaOk) return new Response('{}', { status: 500 });
-      return new Response(JSON.stringify(MOCK_METADATA), {
+      return new Response(JSON.stringify(metadata), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // Content endpoint (returns redirect or direct response)
     if (u.includes('/content')) {
       if (contentStatus >= 300 && contentStatus < 400) {
-        return new Response(null, {
-          status: contentStatus,
-          headers: { Location: S3_URL },
-        });
+        return new Response(null, { status: contentStatus, headers: { Location: S3_URL } });
       }
-      // Direct 200 (no redirect)
       return new Response(new Uint8Array(s3Body), {
         status: contentStatus,
-        headers: { 'Content-Type': 'application/pdf' },
+        headers: { 'Content-Type': s3ContentType },
       });
     }
 
-    // S3 URL — should have no auth header
     if (u === S3_URL) {
-      if (s3Status !== 200) {
-        return new Response('Error', { status: s3Status });
-      }
+      if (s3Status !== 200) return new Response('Error', { status: s3Status });
       return new Response(new Uint8Array(s3Body), {
         status: 200,
-        headers: { 'Content-Type': 'application/pdf' },
+        headers: { 'Content-Type': s3ContentType },
       });
     }
 
@@ -70,218 +73,245 @@ function makeFetchMock({
   }) as typeof globalThis.fetch;
 }
 
+function structured(result: { structuredContent?: Record<string, unknown> }) {
+  return result.structuredContent ?? {};
+}
+
 describe('download_filing_document', () => {
   let originalFetch: typeof globalThis.fetch;
-  let originalEnv: string | undefined;
+  const tool = getTool('download_filing_document')!;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    originalEnv = process.env.COMPANIES_HOUSE_DOWNLOAD_DIR;
-    delete process.env.COMPANIES_HOUSE_DOWNLOAD_DIR;
     vi.mocked(writeFile).mockResolvedValue(undefined);
     vi.mocked(mkdir).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
-    if (originalEnv !== undefined) {
-      process.env.COMPANIES_HOUSE_DOWNLOAD_DIR = originalEnv;
-    } else {
-      delete process.env.COMPANIES_HOUSE_DOWNLOAD_DIR;
-    }
     vi.clearAllMocks();
   });
 
-  // -------------------------------------------------------------------------
-  // normaliseDocumentId — tested indirectly via the URL fetch is called with
-  // -------------------------------------------------------------------------
-
-  it('accepts a bare document ID', async () => {
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    await tool.execute(client, { document_id: 'ABC123', return_as: 'base64' });
-    const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
-    expect(calls.some(u => u.includes('/document/ABC123'))).toBe(true);
-  });
-
-  it('strips /document/ path prefix from ID', async () => {
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    await tool.execute(client, { document_id: '/document/ABC123', return_as: 'base64' });
-    const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
-    // Should NOT double-encode /document/document/
-    expect(
-      calls.some(u => u.endsWith('/document/ABC123') || u.endsWith('/document/ABC123/content'))
-    ).toBe(true);
-    expect(calls.every(u => !u.includes('/document/document/'))).toBe(true);
-  });
-
-  it('strips full Document API URL to bare ID', async () => {
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    const fullUrl = 'https://document-api.company-information.service.gov.uk/document/ABC123';
-    await tool.execute(client, { document_id: fullUrl, return_as: 'base64' });
-    const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
-    expect(calls.every(u => !u.includes('/document/document/'))).toBe(true);
-    expect(calls.some(u => u.includes('/document/ABC123'))).toBe(true);
-  });
-
-  // -------------------------------------------------------------------------
-  // Successful download — file_path mode
-  // -------------------------------------------------------------------------
-
-  it('writes bytes to disk and returns file_path', async () => {
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    const result = await tool.execute(client, {
-      document_id: 'DOC001',
-      format: 'pdf',
-      return_as: 'file_path',
-      save_dir: '/tmp/test-downloads',
+  describe('document id normalisation', () => {
+    it('accepts a bare document id', async () => {
+      globalThis.fetch = makeFetchMock();
+      await tool.execute(client, { document_id: 'ABC123' });
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      expect(calls.some(u => u.includes('/document/ABC123'))).toBe(true);
     });
-    expect(result.isError).toBeFalsy();
-    expect(vi.mocked(mkdir)).toHaveBeenCalledWith('/tmp/test-downloads', { recursive: true });
-    expect(vi.mocked(writeFile)).toHaveBeenCalledOnce();
-    const [filePath, buf] = vi.mocked(writeFile).mock.calls[0] as [string, Buffer];
-    expect(filePath).toMatch(/^\/tmp\/test-downloads\/.+\.pdf$/);
-    expect(Buffer.isBuffer(buf)).toBe(true);
-    expect((result.structuredContent as Record<string, unknown>)?.return_as).toBe('file_path');
-    expect((result.structuredContent as Record<string, unknown>)?.file_path).toBe(filePath);
-  });
 
-  // -------------------------------------------------------------------------
-  // S3 redirect: auth header must NOT be forwarded
-  // -------------------------------------------------------------------------
-
-  it('does not send Authorization header to S3', async () => {
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    await tool.execute(client, { document_id: 'DOC002', return_as: 'base64' });
-
-    const fetchCalls = vi.mocked(globalThis.fetch).mock.calls as Array<[string, RequestInit?]>;
-    const s3Call = fetchCalls.find(([u]) => u === S3_URL);
-    expect(s3Call).toBeDefined();
-    const s3Init = s3Call![1];
-    const headers = new Headers(s3Init?.headers);
-    expect(headers.get('Authorization')).toBeNull();
-  });
-
-  it('sends Authorization header to Document API', async () => {
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    await tool.execute(client, { document_id: 'DOC002', return_as: 'base64' });
-
-    const fetchCalls = vi.mocked(globalThis.fetch).mock.calls as Array<[string, RequestInit?]>;
-    const contentCall = fetchCalls.find(([u]) => (u as string).includes('/content'));
-    expect(contentCall).toBeDefined();
-    const headers = new Headers(contentCall![1]?.headers);
-    expect(headers.get('Authorization')).toBe(
-      'Basic ' + Buffer.from('factory-supplied-key:').toString('base64')
-    );
-  });
-
-  // -------------------------------------------------------------------------
-  // base64 return mode
-  // -------------------------------------------------------------------------
-
-  it('returns bytes inline as base64, no disk write', async () => {
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    const result = await tool.execute(client, {
-      document_id: 'DOC003',
-      return_as: 'base64',
+    it('strips a /document/ path prefix', async () => {
+      globalThis.fetch = makeFetchMock();
+      await tool.execute(client, { document_id: '/document/ABC123' });
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      expect(calls.every(u => !u.includes('/document/document/'))).toBe(true);
     });
-    expect(result.isError).toBeFalsy();
-    expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
-    const sc = result.structuredContent as Record<string, unknown>;
-    expect(sc?.return_as).toBe('base64');
-    expect(typeof sc?.content_base64).toBe('string');
-    // Decoded bytes should match what the mock returned
-    const decoded = Buffer.from(sc!.content_base64 as string, 'base64');
-    expect(decoded).toEqual(FAKE_PDF);
-  });
 
-  // -------------------------------------------------------------------------
-  // save_dir precedence
-  // -------------------------------------------------------------------------
-
-  it('save_dir param takes precedence over env var', async () => {
-    globalThis.fetch = makeFetchMock();
-    process.env.COMPANIES_HOUSE_DOWNLOAD_DIR = '/tmp/env-dir';
-    const tool = getTool('download_filing_document')!;
-    await tool.execute(client, {
-      document_id: 'DOC004',
-      return_as: 'file_path',
-      save_dir: '/tmp/param-dir',
+    it('strips a full Document API URL, including a /content suffix', async () => {
+      globalThis.fetch = makeFetchMock();
+      await tool.execute(client, {
+        document_id:
+          'https://document-api.company-information.service.gov.uk/document/ABC123/content',
+      });
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      expect(calls.every(u => !u.includes('/document/document/'))).toBe(true);
+      expect(calls.some(u => u.endsWith('/document/ABC123'))).toBe(true);
     });
-    expect(vi.mocked(mkdir)).toHaveBeenCalledWith('/tmp/param-dir', { recursive: true });
-    const [filePath] = vi.mocked(writeFile).mock.calls[0] as [string, Buffer];
-    expect(filePath).toMatch(/^\/tmp\/param-dir\//);
   });
 
-  it('COMPANIES_HOUSE_DOWNLOAD_DIR env var used when no save_dir param', async () => {
-    globalThis.fetch = makeFetchMock();
-    process.env.COMPANIES_HOUSE_DOWNLOAD_DIR = '/tmp/env-dir';
-    const tool = getTool('download_filing_document')!;
-    await tool.execute(client, { document_id: 'DOC005', return_as: 'file_path' });
-    expect(vi.mocked(mkdir)).toHaveBeenCalledWith('/tmp/env-dir', { recursive: true });
-    const [filePath] = vi.mocked(writeFile).mock.calls[0] as [string, Buffer];
-    expect(filePath).toMatch(/^\/tmp\/env-dir\//);
+  describe('returning the document to the caller', () => {
+    it('attaches binary content as an embedded resource rather than a path', async () => {
+      globalThis.fetch = makeFetchMock();
+      const result = await tool.execute(client, { document_id: 'DOC001' });
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content.map(block => block.type)).toEqual(['text', 'resource']);
+
+      const block = result.content[1]!;
+      if (block.type !== 'resource') throw new Error('expected a resource block');
+      if (!('blob' in block.resource)) throw new Error('expected a binary blob');
+
+      expect(block.resource.mimeType).toBe('application/pdf');
+      expect(Buffer.from(block.resource.blob, 'base64')).toEqual(FAKE_PDF);
+      expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
+    });
+
+    it('returns text formats as text, not base64', async () => {
+      const body = Buffer.from('<html><body>accounts</body></html>');
+      globalThis.fetch = makeFetchMock({
+        metadata: metadataBody({
+          resources: { 'application/xhtml+xml': { content_length: body.byteLength } },
+        }),
+        s3Body: body,
+        s3ContentType: 'application/xhtml+xml',
+      });
+
+      const result = await tool.execute(client, { document_id: 'DOC002', format: 'xhtml' });
+      const block = result.content[1]!;
+      if (block.type !== 'resource') throw new Error('expected a resource block');
+      if (!('text' in block.resource)) throw new Error('expected text content');
+      expect(block.resource.text).toContain('accounts');
+    });
+
+    it('does not put the document bytes in structuredContent', async () => {
+      globalThis.fetch = makeFetchMock();
+      const result = await tool.execute(client, { document_id: 'DOC003' });
+      const payload = JSON.stringify(structured(result));
+      expect(payload).not.toContain(FAKE_PDF.toString('base64'));
+      expect(structured(result).size_bytes).toBe(FAKE_PDF.byteLength);
+    });
+
+    it('names the file from the Companies House filename', async () => {
+      globalThis.fetch = makeFetchMock();
+      const result = await tool.execute(client, { document_id: 'DOC004' });
+      expect(structured(result).filename).toBe('12345678_aa_2026-01-01.pdf');
+    });
   });
 
-  it('falls back to OS tmpdir when no save_dir or env var', async () => {
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    await tool.execute(client, { document_id: 'DOC006', return_as: 'file_path' });
-    const [filePath] = vi.mocked(writeFile).mock.calls[0] as [string, Buffer];
-    expect(filePath).toMatch(new RegExp(`^${tmpdir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  describe('metadata-first behaviour', () => {
+    it('reports formats and sizes without transferring the document', async () => {
+      globalThis.fetch = makeFetchMock();
+      const result = await tool.execute(client, { document_id: 'DOC005', metadata_only: true });
+
+      expect(structured(result).retrieved).toBe(false);
+      expect(structured(result).available_formats).toEqual(['application/pdf']);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      expect(calls.some(u => u.includes('/content'))).toBe(false);
+    });
+
+    it('refuses a format Companies House does not hold, and says what it does hold', async () => {
+      globalThis.fetch = makeFetchMock();
+      const result = await tool.execute(client, { document_id: 'DOC006', format: 'xhtml' });
+
+      expect(result.isError).toBeFalsy();
+      expect(structured(result).retrieved).toBe(false);
+      expect(structured(result).reason).toBe('format_not_available');
+      const first = result.content[0]!;
+      expect(first.type === 'text' && first.text).toContain('application/pdf');
+    });
+
+    it('still attempts a download when the metadata lists no resources', async () => {
+      globalThis.fetch = makeFetchMock({ metadata: metadataBody({ resources: {} }) });
+      const result = await tool.execute(client, { document_id: 'DOC007' });
+      expect(structured(result).retrieved).toBe(true);
+    });
+
+    it('refuses an oversized document before transferring it', async () => {
+      globalThis.fetch = makeFetchMock();
+      const result = await tool.execute(client, { document_id: 'DOC008', max_bytes: 5 });
+
+      expect(structured(result).retrieved).toBe(false);
+      expect(structured(result).reason).toBe('too_large');
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      expect(calls.some(u => u.includes('/content'))).toBe(false);
+    });
+
+    it('discards a body that exceeds the limit despite the metadata', async () => {
+      globalThis.fetch = makeFetchMock({
+        metadata: metadataBody({ resources: { 'application/pdf': { content_length: 1 } } }),
+      });
+      const result = await tool.execute(client, { document_id: 'DOC009', max_bytes: 4 });
+
+      expect(structured(result).retrieved).toBe(false);
+      expect(structured(result).reason).toBe('too_large');
+      expect(result.content.some(block => block.type === 'resource')).toBe(false);
+    });
   });
 
-  // -------------------------------------------------------------------------
-  // Direct 200 response (no redirect)
-  // -------------------------------------------------------------------------
+  describe('optional local save', () => {
+    it('does not touch the filesystem unless save_to is given', async () => {
+      globalThis.fetch = makeFetchMock();
+      await tool.execute(client, { document_id: 'DOC010' });
+      expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
+      expect(vi.mocked(mkdir)).not.toHaveBeenCalled();
+    });
 
-  it('handles direct 200 content response without a second fetch', async () => {
-    globalThis.fetch = makeFetchMock({ contentStatus: 200 });
-    const tool = getTool('download_filing_document')!;
-    const result = await tool.execute(client, { document_id: 'DOC007', return_as: 'base64' });
-    expect(result.isError).toBeFalsy();
-    // Only two fetch calls: metadata + content (no S3 hop)
-    const fetchCalls = vi.mocked(globalThis.fetch).mock.calls as Array<[string, unknown]>;
-    const s3Calls = fetchCalls.filter(([u]) => u === S3_URL);
-    expect(s3Calls).toHaveLength(0);
+    it('writes to the requested path and reports it', async () => {
+      globalThis.fetch = makeFetchMock();
+      const result = await tool.execute(client, {
+        document_id: 'DOC011',
+        save_to: '/tmp/test-downloads/doc.pdf',
+      });
+
+      expect(vi.mocked(mkdir)).toHaveBeenCalledWith('/tmp/test-downloads', { recursive: true });
+      expect(vi.mocked(writeFile)).toHaveBeenCalledOnce();
+      expect(structured(result).saved_to).toBe('/tmp/test-downloads/doc.pdf');
+    });
+
+    it('still returns the document when the local write fails', async () => {
+      globalThis.fetch = makeFetchMock();
+      vi.mocked(writeFile).mockRejectedValueOnce(new Error('read-only file system'));
+
+      const result = await tool.execute(client, {
+        document_id: 'DOC012',
+        save_to: '/nowhere/doc.pdf',
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content.some(block => block.type === 'resource')).toBe(true);
+      expect(String(structured(result).save_error)).toContain('read-only file system');
+    });
   });
 
-  // -------------------------------------------------------------------------
-  // Error handling
-  // -------------------------------------------------------------------------
+  describe('the Document API redirect', () => {
+    it('does not forward the Companies House credential to the signed URL', async () => {
+      globalThis.fetch = makeFetchMock();
+      await tool.execute(client, { document_id: 'DOC013' });
 
-  it('returns error result when content fetch returns non-200', async () => {
-    globalThis.fetch = makeFetchMock({ contentStatus: 404 });
-    const tool = getTool('download_filing_document')!;
-    const result = await tool.execute(client, { document_id: 'DOC008', return_as: 'base64' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain('Error');
+      const calls = vi.mocked(globalThis.fetch).mock.calls as Array<[string, RequestInit?]>;
+      const s3Call = calls.find(([u]) => u === S3_URL);
+      expect(s3Call).toBeDefined();
+      expect(new Headers(s3Call![1]?.headers).get('Authorization')).toBeNull();
+    });
+
+    it('sends the credential to the Document API itself', async () => {
+      globalThis.fetch = makeFetchMock();
+      await tool.execute(client, { document_id: 'DOC014' });
+
+      const calls = vi.mocked(globalThis.fetch).mock.calls as Array<[string, RequestInit?]>;
+      const contentCall = calls.find(([u]) => (u as string).includes('/content'));
+      expect(new Headers(contentCall![1]?.headers).get('Authorization')).toBe(
+        'Basic ' + Buffer.from('factory-supplied-key:').toString('base64')
+      );
+    });
+
+    it('handles a direct 200 without a second hop', async () => {
+      globalThis.fetch = makeFetchMock({ contentStatus: 200 });
+      const result = await tool.execute(client, { document_id: 'DOC015' });
+
+      expect(result.isError).toBeFalsy();
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      expect(calls.filter(u => u === S3_URL)).toHaveLength(0);
+    });
   });
 
-  it('returns error result when S3 fetch fails', async () => {
-    globalThis.fetch = makeFetchMock({ s3Status: 403 });
-    const tool = getTool('download_filing_document')!;
-    const result = await tool.execute(client, { document_id: 'DOC009', return_as: 'base64' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain('Error');
-  });
+  describe('failures', () => {
+    it('reports an error when the metadata request fails', async () => {
+      globalThis.fetch = makeFetchMock({ metaOk: false });
+      const result = await tool.execute(client, { document_id: 'DOC016' });
+      expect(result.isError).toBe(true);
+    });
 
-  it('returns error result when redirect has no Location header', async () => {
-    globalThis.fetch = vi.fn(async (url: string) => {
-      if ((url as string).includes('/content')) {
-        return new Response(null, { status: 302 }); // no Location
-      }
-      return new Response('{}', { status: 200 });
-    }) as typeof globalThis.fetch;
-    const tool = getTool('download_filing_document')!;
-    const result = await tool.execute(client, { document_id: 'DOC011', return_as: 'base64' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain('Error');
+    it('reports an error when the content request fails', async () => {
+      globalThis.fetch = makeFetchMock({ contentStatus: 404 });
+      const result = await tool.execute(client, { document_id: 'DOC017' });
+      expect(result.isError).toBe(true);
+    });
+
+    it('reports an error when the signed URL fails', async () => {
+      globalThis.fetch = makeFetchMock({ s3Status: 403 });
+      const result = await tool.execute(client, { document_id: 'DOC018' });
+      expect(result.isError).toBe(true);
+    });
+
+    it('reports an error when a redirect carries no Location', async () => {
+      globalThis.fetch = vi.fn(async (url: string) => {
+        if ((url as string).includes('/content')) return new Response(null, { status: 302 });
+        return new Response(JSON.stringify(metadataBody()), { status: 200 });
+      }) as typeof globalThis.fetch;
+
+      const result = await tool.execute(client, { document_id: 'DOC019' });
+      expect(result.isError).toBe(true);
+    });
   });
 });

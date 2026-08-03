@@ -2,9 +2,11 @@
 
 import { readFileSync } from 'node:fs';
 import { APIClient } from '../api/client.js';
-import { getTool, getAllTools } from '../tools/registry.js';
-import { resolveApiKey, writeApiKey, getConfigPath } from '../config.js';
+import { getTool, getAllTools, TOOL_GROUP_TITLES, type ToolGroup } from '../tools/registry.js';
+import { resolveApiKey, writeApiKey, clearApiKey, getConfigPath } from '../config.js';
 import { markdownToTerminal } from './terminal-format.js';
+import { COMMANDS, type CommandDefinition } from './commands.js';
+import { describeParameters, type ToolParameter } from './schema-introspect.js';
 
 // Import the canonical tool set to trigger registration.
 import '../tools/all.js';
@@ -13,193 +15,277 @@ const { version: cliVersion } = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
 ) as { version: string };
 
+const GLOBAL_FLAGS = new Set(['--json', '--md', '--markdown', '--help', '-h', '--version', '-v']);
+
+/** Exit codes callers can branch on. */
+const EXIT_OK = 0;
+const EXIT_USAGE = 2;
+const EXIT_NO_API_KEY = 3;
+const EXIT_TOOL_ERROR = 1;
+
+function fail(message: string, code: number): never {
+  console.error(message);
+  process.exit(code);
+}
+
 function getClient(keyFlag?: string): APIClient {
   const resolved = resolveApiKey(keyFlag);
   if (!resolved) {
-    console.error(
-      'Error: No API key found.\n\n' +
-        'Set one using any of these methods (highest priority first):\n' +
-        '  1. --key flag:    ch profile 00445790 --key <key>\n' +
-        '  2. Env var:       export COMPANIES_HOUSE_API_KEY=<key>\n' +
-        '  3. Config file:   ch config set-key <key>\n\n' +
-        'Get a free API key at https://developer.company-information.service.gov.uk/'
+    fail(
+      'No Companies House API key found.\n\n' +
+        'Set one, highest priority first:\n' +
+        '  1. --key <key>                          for a single command\n' +
+        '  2. export COMPANIES_HOUSE_API_KEY=<key>  for the shell session\n' +
+        '  3. ch config set-key <key>               saved to ' +
+        getConfigPath() +
+        '\n\n' +
+        'Registration is free at https://developer.company-information.service.gov.uk/',
+      EXIT_NO_API_KEY
     );
-    process.exit(1);
   }
   return new APIClient({ api_key: resolved.key });
 }
 
-interface CommandDef {
-  name: string;
-  tool: string;
-  description: string;
-  positional?: string; // maps positional arg to this tool param
-  flags?: Record<
-    string,
-    { param: string; type: 'string' | 'number' | 'boolean'; description: string }
-  >;
+function parameterFlag(name: string): string {
+  return `--${name.replace(/_/g, '-')}`;
 }
 
-const COMMANDS: CommandDef[] = [
-  {
-    name: 'search',
-    tool: 'search_companies',
-    description: 'Search for companies by name',
-    positional: 'query',
-    flags: {
-      '--status': { param: 'company_status', type: 'string', description: 'Filter by status' },
-      '--type': { param: 'company_type', type: 'string', description: 'Filter by type' },
-      '--sic': { param: 'sic_codes', type: 'string', description: 'Filter by SIC code' },
-      '--location': { param: 'location', type: 'string', description: 'Filter by location' },
-      '--limit': { param: 'items_per_page', type: 'number', description: 'Results per page' },
-    },
-  },
-  {
-    name: 'profile',
-    tool: 'get_company_profile',
-    description: 'Get company profile',
-    positional: 'company_number',
-  },
-  {
-    name: 'officers',
-    tool: 'get_officers',
-    description: 'Get company officers',
-    positional: 'company_number',
-    flags: {
-      '--all': { param: 'include_resigned', type: 'boolean', description: 'Include resigned' },
-      '--limit': { param: 'items_per_page', type: 'number', description: 'Results per page' },
-    },
-  },
-  {
-    name: 'ownership',
-    tool: 'get_ownership',
-    description: 'Get PSCs (ownership)',
-    positional: 'company_number',
-  },
-  {
-    name: 'filings',
-    tool: 'get_filings',
-    description: 'Get filing history',
-    positional: 'company_number',
-    flags: {
-      '--category': { param: 'category', type: 'string', description: 'Filing category' },
-      '--limit': { param: 'items_per_page', type: 'number', description: 'Results per page' },
-    },
-  },
-  {
-    name: 'charges',
-    tool: 'get_charges',
-    description: 'Get company charges',
-    positional: 'company_number',
-  },
-  {
-    name: 'insolvency',
-    tool: 'get_insolvency',
-    description: 'Get insolvency data',
-    positional: 'company_number',
-  },
-  {
-    name: 'report',
-    tool: 'company_report',
-    description: 'Full company report',
-    positional: 'company_number',
-  },
-  {
-    name: 'check',
-    tool: 'due_diligence_check',
-    description: 'Due diligence red-flag scan',
-    positional: 'company_number',
-  },
-  {
-    name: 'network',
-    tool: 'officer_network',
-    description: 'Officer network map',
-    positional: 'officer_name',
-    flags: {
-      '--id': { param: 'officer_id', type: 'string', description: 'Officer ID (instead of name)' },
-    },
-  },
-  {
-    name: 'search-officers',
-    tool: 'search_officers',
-    description: 'Search for officers by name',
-    positional: 'query',
-    flags: {
-      '--limit': { param: 'items_per_page', type: 'number', description: 'Results per page' },
-    },
-  },
-];
+/** Flags a command accepts: derived parameter flags plus declared aliases. */
+function commandFlags(command: CommandDefinition): Map<string, ToolParameter> {
+  const tool = getTool(command.tool);
+  if (!tool) return new Map();
+  const parameters = describeParameters(tool.inputSchema);
+  const byName = new Map(parameters.map(parameter => [parameter.name, parameter]));
+  const flags = new Map<string, ToolParameter>();
 
-function printUsage(): void {
-  console.log('Companies House CLI\n');
-  console.log('Usage: ch <command> [arguments] [flags]\n');
-  console.log('Commands:');
-  const maxLen = Math.max(...COMMANDS.map(c => c.name.length));
-  for (const cmd of COMMANDS) {
-    console.log(`  ${cmd.name.padEnd(maxLen + 2)} ${cmd.description}`);
+  for (const parameter of parameters) {
+    flags.set(parameterFlag(parameter.name), parameter);
   }
-  console.log(`  ${'config'.padEnd(maxLen + 2)} Manage configuration (set-key, show)`);
-  console.log('\nOutput:');
-  console.log('  (default) Clean terminal formatting with colour');
-  console.log('  --md      Markdown output (for notes, docs, piping to files)');
-  console.log('  --json    Raw JSON (pipe-friendly, for scripting)');
-  console.log('\nFlags:');
-  console.log('  --key     API key (overrides env var and config file)');
-  console.log('  --help    Show this help message');
-  console.log('\nAPI Key (checked in this order):');
-  console.log('  1. --key flag');
-  console.log('  2. COMPANIES_HOUSE_API_KEY env var');
-  console.log('  3. ~/.config/companies-house/config.json');
-  console.log('\nExamples:');
-  console.log('  ch search "Anthropic"');
-  console.log('  ch report 14604577');
-  console.log('  ch check 14604577');
-  console.log('  ch officers 14604577 --all');
-  console.log('  ch network "John Smith"');
-  console.log('  ch search "tech" --status active --sic 62011 --json');
-  console.log('  ch config set-key cbcf30a4-d379-4f28-b3fe-3b9da25217b6');
+  for (const [alias, parameterName] of Object.entries(command.aliases ?? {})) {
+    const parameter = byName.get(parameterName);
+    if (parameter) flags.set(alias, parameter);
+  }
+  return flags;
 }
 
-function parseArgs(args: string[], cmdDef: CommandDef): Record<string, unknown> {
+function printRootUsage(): void {
+  const width = Math.max(...COMMANDS.map(c => c.name.length), 'config'.length, 'serve'.length) + 2;
+  const lines: string[] = [
+    'ch — Companies House CLI',
+    '',
+    'Read the UK Companies House public register from the terminal, using your own API key.',
+    '',
+    'Usage: ch <command> [arguments] [flags]',
+    '',
+    'Commands:',
+  ];
+
+  const byGroup = new Map<ToolGroup, CommandDefinition[]>();
+  for (const command of COMMANDS) {
+    const tool = getTool(command.tool);
+    if (!tool) continue;
+    const group = byGroup.get(tool.group) ?? [];
+    group.push(command);
+    byGroup.set(tool.group, group);
+  }
+
+  for (const [group, title] of Object.entries(TOOL_GROUP_TITLES) as Array<[ToolGroup, string]>) {
+    const commands = byGroup.get(group);
+    if (!commands?.length) continue;
+    lines.push('', `  ${title}`);
+    for (const command of commands) {
+      lines.push(`    ${command.name.padEnd(width)}${command.summary}`);
+    }
+  }
+
+  lines.push(
+    '',
+    '  Server and configuration',
+    `    ${'serve'.padEnd(width)}Run the MCP server (stdio by default, --http for Streamable HTTP)`,
+    `    ${'config'.padEnd(width)}Manage the saved API key (set-key, show, path, clear)`,
+    `    ${'tools'.padEnd(width)}List the MCP tools this build exposes`,
+    '',
+    'Output:',
+    '  (default)  Formatted for a terminal',
+    '  --md       Markdown, for files and notes',
+    '  --json     The structured payload, for scripting',
+    '',
+    'Global flags:',
+    '  --key <key>   Use this API key for one command',
+    '  --help, -h    Show help. Use "ch <command> --help" for a command',
+    '  --version,-v  Print the version',
+    '',
+    'API key, checked in order: --key, COMPANIES_HOUSE_API_KEY, then ' + getConfigPath() + '.',
+    'Get one free at https://developer.company-information.service.gov.uk/',
+    '',
+    'Examples:',
+    '  ch search "Tesco"',
+    '  ch profile 00445790',
+    '  ch report 00445790',
+    '  ch check SC311560',
+    '  ch report 00445790 --json | jq .profile.company_status',
+    '',
+    'Data comes from the Companies House public register. It records what companies have',
+    'filed; Companies House does not verify that it is accurate. This tool is not',
+    'affiliated with Companies House.'
+  );
+  console.log(lines.join('\n'));
+}
+
+function printCommandUsage(command: CommandDefinition): void {
+  const tool = getTool(command.tool);
+  if (!tool) return;
+  const parameters = describeParameters(tool.inputSchema);
+  const positionalSet = new Set(command.positionals);
+  const aliasesByParameter = new Map<string, string[]>();
+  for (const [alias, parameterName] of Object.entries(command.aliases ?? {})) {
+    aliasesByParameter.set(parameterName, [...(aliasesByParameter.get(parameterName) ?? []), alias]);
+  }
+
+  const argumentSignature = command.positionals
+    .map(name => {
+      const parameter = parameters.find(p => p.name === name);
+      return parameter?.required === false ? `[${name}]` : `<${name}>`;
+    })
+    .join(' ');
+
+  const lines: string[] = [
+    `ch ${command.name} — ${command.summary}`,
+    '',
+    `Usage: ch ${command.name} ${argumentSignature} [flags]`.replace(/\s+$/, ''),
+    '',
+    'Calls the MCP tool: ' + tool.name,
+    '',
+    tool.description,
+    '',
+  ];
+
+  const flagParameters = parameters.filter(parameter => !positionalSet.has(parameter.name));
+  if (flagParameters.length) {
+    lines.push('Flags:');
+    for (const parameter of flagParameters) {
+      const names = [
+        ...new Set([parameterFlag(parameter.name), ...(aliasesByParameter.get(parameter.name) ?? [])]),
+      ];
+      const value =
+        parameter.kind === 'boolean'
+          ? ''
+          : parameter.kind === 'enum'
+            ? ` <${parameter.choices?.join('|')}>`
+            : ` <${parameter.kind}>`;
+      const suffix =
+        parameter.defaultValue !== undefined ? ` (default: ${String(parameter.defaultValue)})` : '';
+      lines.push(`  ${names.join(', ')}${value}`);
+      lines.push(`      ${parameter.description ?? ''}${suffix}`.trimEnd());
+    }
+    lines.push('');
+  }
+
+  for (const name of command.positionals) {
+    const parameter = parameters.find(p => p.name === name);
+    if (!parameter?.description) continue;
+    lines.push(`${name}:`, `  ${parameter.description}`, '');
+  }
+
+  lines.push('Output: --md for markdown, --json for the structured payload.', '', 'Examples:');
+  for (const example of command.examples) lines.push(`  ${example}`);
+  console.log(lines.join('\n'));
+}
+
+function printTools(asJson: boolean): void {
+  const tools = getAllTools();
+  if (asJson) {
+    console.log(
+      JSON.stringify(
+        tools.map(tool => ({
+          name: tool.name,
+          title: tool.title,
+          group: tool.group,
+          description: tool.description,
+          parameters: describeParameters(tool.inputSchema),
+        })),
+        null,
+        2
+      )
+    );
+    return;
+  }
+  console.log(`${tools.length} MCP tools:\n`);
+  for (const [group, title] of Object.entries(TOOL_GROUP_TITLES) as Array<[ToolGroup, string]>) {
+    const inGroup = tools.filter(tool => tool.group === group);
+    if (!inGroup.length) continue;
+    console.log(`${title}`);
+    for (const tool of inGroup) console.log(`  ${tool.name.padEnd(32)}${tool.title}`);
+    console.log('');
+  }
+}
+
+function parseCommandArguments(
+  args: string[],
+  command: CommandDefinition
+): Record<string, unknown> {
+  const flags = commandFlags(command);
   const params: Record<string, unknown> = {};
-  const flags = cmdDef.flags ?? {};
+  const positionals: string[] = [];
 
-  let i = 0;
-  let positionalSet = false;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
 
-  while (i < args.length) {
-    const arg = args[i]!;
-
-    if (arg === '--json' || arg === '--md' || arg === '--markdown' || arg === '--key') {
-      i += arg === '--key' ? 2 : 1; // --key consumes its value
-      continue; // handled separately
+    if (GLOBAL_FLAGS.has(arg)) continue;
+    if (arg === '--key') {
+      index++; // consumes its value, handled globally
+      continue;
     }
 
     if (arg.startsWith('--')) {
-      const flagDef = flags[arg];
-      if (!flagDef) {
-        console.error(`Unknown flag: ${arg}`);
-        process.exit(1);
+      const [flagName, inlineValue] = arg.includes('=')
+        ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)]
+        : [arg, undefined];
+      const parameter = flags.get(flagName);
+      if (!parameter) {
+        fail(
+          `Unknown flag for "ch ${command.name}": ${flagName}\nRun "ch ${command.name} --help" for the flags this command accepts.`,
+          EXIT_USAGE
+        );
       }
-      if (flagDef.type === 'boolean') {
-        params[flagDef.param] = true;
-        i++;
+
+      if (parameter.kind === 'boolean') {
+        params[parameter.name] = inlineValue === undefined ? true : inlineValue !== 'false';
+        continue;
+      }
+
+      const value = inlineValue ?? args[++index];
+      if (value === undefined) fail(`${flagName} needs a value.`, EXIT_USAGE);
+
+      if (parameter.kind === 'number') {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) fail(`${flagName} needs a number, got "${value}".`, EXIT_USAGE);
+        params[parameter.name] = parsed;
       } else {
-        const val = args[i + 1];
-        if (val === undefined) {
-          console.error(`Flag ${arg} requires a value`);
-          process.exit(1);
+        if (parameter.choices && !parameter.choices.includes(value)) {
+          fail(
+            `${flagName} must be one of: ${parameter.choices.join(', ')} — got "${value}".`,
+            EXIT_USAGE
+          );
         }
-        params[flagDef.param] = flagDef.type === 'number' ? parseInt(val, 10) : val;
-        i += 2;
+        params[parameter.name] = value;
       }
-    } else if (!positionalSet && cmdDef.positional) {
-      params[cmdDef.positional] = arg;
-      positionalSet = true;
-      i++;
-    } else {
-      i++;
+      continue;
     }
+
+    positionals.push(arg);
+  }
+
+  for (const [position, name] of command.positionals.entries()) {
+    const value = positionals[position];
+    if (value !== undefined && params[name] === undefined) params[name] = value;
+  }
+
+  if (positionals.length > command.positionals.length) {
+    fail(
+      `ch ${command.name} takes ${command.positionals.length} argument(s), got ${positionals.length}.\nRun "ch ${command.name} --help" for usage.`,
+      EXIT_USAGE
+    );
   }
 
   return params;
@@ -210,12 +296,9 @@ function handleConfigCommand(args: string[]): void {
 
   if (subcommand === 'set-key') {
     const key = args[1];
-    if (!key) {
-      console.error('Usage: ch config set-key <api-key>');
-      process.exit(1);
-    }
+    if (!key) fail('Usage: ch config set-key <api-key>', EXIT_USAGE);
     writeApiKey(key);
-    console.log(`API key saved to ${getConfigPath()}`);
+    console.log(`API key saved to ${getConfigPath()} with owner-only permissions.`);
     return;
   }
 
@@ -223,77 +306,127 @@ function handleConfigCommand(args: string[]): void {
     const resolved = resolveApiKey();
     if (!resolved) {
       console.log('No API key configured.');
-      console.log(`\nConfig file: ${getConfigPath()}`);
-    } else {
-      const masked = resolved.key.slice(0, 4) + '...' + resolved.key.slice(-4);
-      console.log(`API key:  ${masked}`);
-      console.log(
-        `Source:   ${resolved.source === 'env' ? 'COMPANIES_HOUSE_API_KEY env var' : resolved.source === 'config' ? getConfigPath() : 'flag'}`
-      );
+      console.log(`Config file would be: ${getConfigPath()}`);
+      return;
     }
+    // Only ever the last four characters, so the key cannot be reconstructed
+    // from terminal scrollback or a pasted log.
+    console.log(`API key: ****${resolved.key.slice(-4)}`);
+    console.log(
+      `Source:  ${
+        resolved.source === 'env'
+          ? 'COMPANIES_HOUSE_API_KEY environment variable'
+          : resolved.source === 'config'
+            ? getConfigPath()
+            : '--key flag'
+      }`
+    );
     return;
   }
 
-  console.log('Usage: ch config <subcommand>\n');
-  console.log('Subcommands:');
-  console.log('  set-key <key>   Save API key to config file');
-  console.log('  show            Show current API key source');
+  if (subcommand === 'path') {
+    console.log(getConfigPath());
+    return;
+  }
+
+  if (subcommand === 'clear') {
+    const removed = clearApiKey();
+    console.log(
+      removed
+        ? `Removed the saved API key from ${getConfigPath()}.`
+        : 'No saved API key to remove.'
+    );
+    return;
+  }
+
+  console.log(
+    [
+      'Usage: ch config <subcommand>',
+      '',
+      'Subcommands:',
+      '  set-key <key>   Save an API key to the config file',
+      '  show            Show which key source is active, masked',
+      '  path            Print the config file path',
+      '  clear           Remove the saved key',
+    ].join('\n')
+  );
 }
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
-    printUsage();
-    process.exit(0);
+  if (args.includes('--version') || args.includes('-v')) {
+    console.log(cliVersion);
+    process.exit(EXIT_OK);
   }
 
-  // Handle "serve" command — start MCP server
-  if (args[0] === 'serve') {
+  const commandName = args[0];
+  const wantsHelp = args.includes('--help') || args.includes('-h');
+
+  if (!commandName || (wantsHelp && !commandName)) {
+    printRootUsage();
+    process.exit(commandName ? EXIT_OK : EXIT_USAGE);
+  }
+
+  if (commandName === 'serve') {
     const { runServer } = await import('../server/index.js');
     await runServer({ version: cliVersion, argv: args.slice(1) });
     return;
   }
 
-  // Handle "config" command
-  if (args[0] === 'config') {
+  if (commandName === 'config') {
     handleConfigCommand(args.slice(1));
     return;
   }
 
-  // Extract global --key flag
-  const keyIdx = args.indexOf('--key');
-  const keyFlag = keyIdx !== -1 ? args[keyIdx + 1] : undefined;
-  if (keyIdx !== -1 && !keyFlag) {
-    console.error('Error: --key requires a value');
-    process.exit(1);
+  if (commandName === 'tools') {
+    printTools(args.includes('--json'));
+    return;
   }
 
-  const commandName = args[0]!;
-  const cmdDef = COMMANDS.find(c => c.name === commandName);
-
-  if (!cmdDef) {
-    console.error(`Unknown command: ${commandName}\nRun "ch --help" for usage.`);
-    process.exit(1);
+  const command = COMMANDS.find(candidate => candidate.name === commandName);
+  if (!command) {
+    if (wantsHelp) {
+      printRootUsage();
+      process.exit(EXIT_OK);
+    }
+    fail(
+      `Unknown command: ${commandName}\nRun "ch --help" to see the available commands.`,
+      EXIT_USAGE
+    );
   }
 
-  const tool = getTool(cmdDef.tool);
-  if (!tool) {
-    console.error(`Tool not found: ${cmdDef.tool}`);
-    process.exit(1);
+  if (wantsHelp) {
+    printCommandUsage(command);
+    process.exit(EXIT_OK);
   }
 
+  const tool = getTool(command.tool);
+  if (!tool) fail(`Tool not registered: ${command.tool}`, EXIT_TOOL_ERROR);
+
+  const keyIndex = args.indexOf('--key');
+  const keyFlag = keyIndex !== -1 ? args[keyIndex + 1] : undefined;
+  if (keyIndex !== -1 && (!keyFlag || keyFlag.startsWith('--'))) {
+    fail('--key needs a value.', EXIT_USAGE);
+  }
+
+  const params = parseCommandArguments(args.slice(1), command);
   const outputJson = args.includes('--json');
   const outputMarkdown = args.includes('--md') || args.includes('--markdown');
-  const cmdArgs = args.slice(1).filter(a => !['--json', '--md', '--markdown'].includes(a));
-  const params = parseArgs(cmdArgs, cmdDef);
 
-  // Validate positional arg is provided
-  if (cmdDef.positional && !params[cmdDef.positional]) {
-    // Special case: network can use --id instead
-    if (cmdDef.name !== 'network' || !params['officer_id']) {
-      console.error(`Missing required argument: ${cmdDef.positional}`);
-      process.exit(1);
+  const missing = command.positionals.filter(name => params[name] === undefined);
+  if (missing.length) {
+    const parameters = describeParameters(tool.inputSchema);
+    const stillRequired = missing.filter(
+      name => parameters.find(parameter => parameter.name === name)?.required !== false
+    );
+    // `ch network` accepts --id instead of a name, so a missing optional
+    // positional is only an error when nothing else satisfies the tool.
+    if (stillRequired.length) {
+      fail(
+        `ch ${command.name} needs: ${stillRequired.join(', ')}\nRun "ch ${command.name} --help" for usage.`,
+        EXIT_USAGE
+      );
     }
   }
 
@@ -302,26 +435,39 @@ async function main(): Promise<void> {
   try {
     const result = await tool.execute(client, params);
 
-    if (outputJson && result.structuredContent) {
-      console.log(JSON.stringify(result.structuredContent, null, 2));
+    if (outputJson) {
+      console.log(JSON.stringify(result.structuredContent ?? {}, null, 2));
     } else {
-      for (const content of result.content) {
-        if (content.type === 'text') {
-          console.log(outputMarkdown ? content.text : markdownToTerminal(content.text));
+      for (const block of result.content) {
+        if (block.type === 'text') {
+          console.log(outputMarkdown ? block.text : markdownToTerminal(block.text));
         }
       }
     }
 
-    if (result.isError) {
-      process.exit(1);
+    // A retrieved document is bytes, not prose: write it where the caller
+    // asked, or tell them how to ask, rather than printing base64.
+    const saveTarget = params['save_to'];
+    const resourceBlock = result.content.find(block => block.type === 'resource');
+    if (resourceBlock?.type === 'resource' && !outputJson) {
+      const { resource } = resourceBlock;
+      if (typeof saveTarget === 'string' && saveTarget) {
+        // The tool already wrote it; nothing more to do here.
+      } else {
+        const size = 'blob' in resource ? 'binary' : `${resource.text.length} characters`;
+        console.log(
+          `\nThe document (${size}) was not written to disk. Re-run with --out <path> to save it.`
+        );
+      }
     }
-  } catch (err) {
-    console.error(`Error: ${(err as Error).message}`);
-    process.exit(1);
+
+    if (result.isError) process.exit(EXIT_TOOL_ERROR);
+  } catch (error) {
+    fail(`Error: ${(error as Error).message}`, EXIT_TOOL_ERROR);
   }
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err);
-  process.exit(1);
+main().catch(error => {
+  console.error('Fatal error:', error instanceof Error ? error.message : error);
+  process.exit(EXIT_TOOL_ERROR);
 });

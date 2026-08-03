@@ -6,6 +6,7 @@ import {
 } from '../../../src/api/client.js';
 import '../../../src/tools/all.js';
 import { getTool } from '../../../src/tools/registry.js';
+import { textOf } from '../../helpers.js';
 
 function createRejectingClient(error: unknown): APIClient {
   const client = new APIClient({ api_key: 'test', cache_enabled: false });
@@ -42,7 +43,7 @@ describe('Tool execution errors', () => {
         endpoint: '/company/12345678',
         retryable,
       });
-      expect(result.content[0]!.text).toContain(`Companies House returned ${statusCode}`);
+      expect(textOf(result)).toContain(`Companies House returned ${statusCode}`);
     }
   );
 
@@ -69,6 +70,9 @@ describe('Tool execution errors', () => {
     });
   });
 
+  // Companies House returns 404 for a valid company that simply has no record
+  // of this kind. Reporting that as a failure would make an ordinary answer
+  // look like a broken request.
   it.each([
     {
       toolName: 'get_charges',
@@ -83,17 +87,27 @@ describe('Tool execution errors', () => {
     {
       toolName: 'get_company_registers',
       params: { company_number: '12345678' },
-      structured: {},
+      structured: { registers: {} },
     },
     {
       toolName: 'get_exemptions',
       params: { company_number: '12345678' },
-      structured: {},
+      structured: { exemptions: {} },
+    },
+    {
+      toolName: 'get_uk_establishments',
+      params: { company_number: '12345678' },
+      structured: { items: [] },
     },
     {
       toolName: 'get_officer_disqualifications',
       params: { officer_id: 'abc123' },
-      structured: {},
+      structured: { disqualifications: [] },
+    },
+    {
+      toolName: 'get_filings',
+      params: { company_number: '12345678' },
+      structured: { items: [], total_count: 0 },
     },
   ])('keeps $toolName empty-data 404s successful', async ({ toolName, params, structured }) => {
     const result = await getTool(toolName)!.execute(
@@ -102,6 +116,20 @@ describe('Tool execution errors', () => {
     );
 
     expect(result.isError).toBeFalsy();
-    expect(result.structuredContent).toEqual(structured);
+    expect(result.structuredContent).toMatchObject(structured);
+  });
+
+  it('surfaces the wait Companies House asked for after a rate limit', async () => {
+    const result = await getTool('get_company_profile')!.execute(
+      createRejectingClient(
+        new CompaniesHouseAPIError('Companies House rate limit reached.', 429, '/company/1', 42)
+      ),
+      { company_number: '12345678' }
+    );
+
+    expect(result.structuredContent?.error).toMatchObject({
+      retryable: true,
+      retry_after_seconds: 42,
+    });
   });
 });

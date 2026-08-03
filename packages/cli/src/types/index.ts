@@ -299,6 +299,30 @@ export interface PSCList {
   links?: { self?: string; persons_with_significant_control_statements_list?: string };
 }
 
+/**
+ * A statement filed in place of a PSC entry — for example that the company
+ * knows of no person with significant control, or that enquiries are ongoing.
+ */
+export interface PSCStatement {
+  statement: string;
+  notified_on?: string;
+  ceased_on?: string;
+  kind?: string;
+  links?: Record<string, string>;
+  etag?: string;
+}
+
+export interface PSCStatementList {
+  items: PSCStatement[];
+  items_per_page: number;
+  kind?: string;
+  start_index: number;
+  total_results: number;
+  active_count?: number;
+  ceased_count?: number;
+  links?: Record<string, string>;
+}
+
 export interface InsolvencyCase {
   number?: number;
   type?: string;
@@ -390,14 +414,22 @@ export interface DisqualifiedOfficer {
 }
 
 export interface DocumentMetadata {
+  company_number?: string;
   barcode?: string;
+  category?: string;
+  /** Companies House's own name for the file, e.g. "14604577_cs01_2026-02-04". */
+  filename?: string;
   significant_date?: string;
   significant_date_type?: string;
   created_at?: string;
   etag?: string;
   links?: { self?: string; document?: string };
   pages?: number;
-  resources?: Record<string, { content_length: number; content_type: string; created_at: string; updated_at: string }>;
+  /** Keyed by media type. Only the types listed here can be requested. */
+  resources?: Record<
+    string,
+    { content_length?: number; content_type?: string; created_at?: string; updated_at?: string }
+  >;
   total_count?: number;
   updated_at?: string;
 }

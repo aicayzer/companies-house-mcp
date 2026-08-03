@@ -4,36 +4,40 @@ import { CompaniesHouseAPIError, CompaniesHouseNetworkError } from '../../../src
 import '../../../src/tools/all.js';
 import { getAllTools, getTool, makeErrorResult } from '../../../src/tools/registry.js';
 
+/** The canonical tool set, in the deterministic order the registry returns. */
+const EXPECTED_TOOLS = [
+  'company_report',
+  'download_filing_document',
+  'due_diligence_check',
+  'get_appointments',
+  'get_charges',
+  'get_company_profile',
+  'get_company_registers',
+  'get_exemptions',
+  'get_filing_document',
+  'get_filings',
+  'get_insolvency',
+  'get_officer_disqualifications',
+  'get_officers',
+  'get_ownership',
+  'get_uk_establishments',
+  'officer_network',
+  'search_companies',
+  'search_officers',
+];
+
 describe('Tool Registry', () => {
   it('registers the complete canonical tool set', () => {
-    const tools = getAllTools();
-    expect(tools).toHaveLength(18);
-
-    const names = tools.map(tool => tool.name);
-    expect(names).toEqual([
-      'search_companies',
-      'search_officers',
-      'get_company_profile',
-      'get_officers',
-      'get_appointments',
-      'get_ownership',
-      'get_filings',
-      'get_charges',
-      'get_insolvency',
-      'get_company_registers',
-      'get_exemptions',
-      'get_uk_establishments',
-      'get_officer_disqualifications',
-      'get_filing_document',
-      'company_report',
-      'due_diligence_check',
-      'officer_network',
-      'download_filing_document',
-    ]);
-    expect(new Set(names)).toHaveLength(18);
+    const names = getAllTools().map(tool => tool.name);
+    expect(names).toEqual(EXPECTED_TOOLS);
+    expect(new Set(names)).toHaveLength(EXPECTED_TOOLS.length);
   });
 
-  it('every tool has a title, object schema, and accurate annotations', () => {
+  it('lists tools in a stable order across calls', () => {
+    expect(getAllTools().map(tool => tool.name)).toEqual(getAllTools().map(tool => tool.name));
+  });
+
+  it('every tool has a title, group, object schema, and accurate annotations', () => {
     const tools = getAllTools();
     const titles = tools.map(tool => tool.title);
 
@@ -41,13 +45,17 @@ describe('Tool Registry', () => {
       expect(tool.name).toBeTruthy();
       expect(tool.title).toBeTruthy();
       expect(tool.description).toBeTruthy();
+      expect(tool.group).toBeTruthy();
       expect(tool.inputSchema).toBeInstanceOf(z.ZodObject);
       expect(tool.annotations).toEqual(
+        // The document tool can write a file when explicitly asked, so it does
+        // not claim readOnlyHint. Writing the same document twice replaces the
+        // same path, so it stays idempotent.
         tool.name === 'download_filing_document'
           ? {
               readOnlyHint: false,
               destructiveHint: false,
-              idempotentHint: false,
+              idempotentHint: true,
               openWorldHint: true,
             }
           : {
@@ -60,7 +68,18 @@ describe('Tool Registry', () => {
       expect(typeof tool.execute).toBe('function');
     }
 
-    expect(new Set(titles)).toHaveLength(18);
+    expect(new Set(titles)).toHaveLength(tools.length);
+  });
+
+  it('describes every tool parameter, so generated help cannot be blank', () => {
+    for (const tool of getAllTools()) {
+      for (const [name, field] of Object.entries(tool.inputSchema.shape)) {
+        expect(
+          (field as { description?: string }).description,
+          `${tool.name}.${name} has no description`
+        ).toBeTruthy();
+      }
+    }
   });
 
   it('getTool returns specific tool', () => {

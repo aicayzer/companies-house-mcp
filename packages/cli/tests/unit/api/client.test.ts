@@ -139,8 +139,15 @@ describe('CompaniesHouseAPIError', () => {
   it('describes upstream rate limits without claiming the request is queued', () => {
     const error = CompaniesHouseAPIError.fromResponse(429, '/company/test');
 
-    expect(error.message).toContain('Try again later');
+    expect(error.message).toContain('rate limit reached');
     expect(error.message).not.toContain('queued');
+  });
+
+  it('reports the wait Companies House signalled', () => {
+    const error = CompaniesHouseAPIError.fromResponse(429, '/company/test', undefined, 12);
+
+    expect(error.retryAfterSeconds).toBe(12);
+    expect(error.message).toContain('Retry in about 12 second(s)');
   });
 
   it('includes response body in error', () => {

@@ -1,62 +1,42 @@
 /**
- * Companies House Document API tool — download the actual filed document
- * (PDF / XHTML / XML / JSON) for a given filing history item.
+ * Retrieve the document behind a Companies House filing.
  *
- * The standard REST API (api.company-information.service.gov.uk) only returns
- * filing metadata. The underlying documents live on a separate service at
- * document-api.company-information.service.gov.uk and follow a two-step
- * request flow:
+ * The document itself is returned to the caller as an MCP embedded resource:
+ * binary formats as a base64 blob, text formats as text. That is what makes
+ * the tool useful over a remote transport, where the caller has no access to
+ * the machine the server runs on and a filesystem path would be meaningless.
  *
- *   1. GET  /document/{document_id}             -> metadata + resources map
- *   2. GET  /document/{document_id}/content     -> 302 redirect to a signed
- *                                                  S3 URL containing the file
+ * Writing to disk is available but must be asked for explicitly with
+ * `save_to`, and only works when the server and the caller share a filesystem.
  *
- * This tool performs both steps and then EITHER:
- *   - writes the bytes to a file on the server's disk and returns the local
- *     path (default — `return_as: 'file_path'`); or
- *   - returns the bytes inline as a base64 string in the response payload
- *     (`return_as: 'base64'`), which is what you want when the MCP server
- *     runs on a different machine to the caller (e.g. hosted on Fly.io and
- *     accessed over HTTP via mcp-remote).
- *
- * Save location precedence (file_path mode only):
- *   1. `save_dir` parameter on the call
- *   2. `COMPANIES_HOUSE_DOWNLOAD_DIR` environment variable
- *   3. OS temp directory (the historical default)
+ * Document metadata is always read first. It reports which content types
+ * Companies House actually holds for that document and how large each one is,
+ * so the size limit is applied before any bytes are transferred rather than
+ * after.
  */
 
 import { z } from 'zod';
-import { writeFile, mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 
 import {
   registerTool,
   DOWNLOAD_TOOL_ANNOTATIONS,
   makeTextResult,
+  makeResourceResult,
   makeErrorResult,
 } from './registry.js';
 import {
-  CompaniesHouseAPIError,
-  CompaniesHouseNetworkError,
-  type APIClient,
-} from '../api/client.js';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const DOCUMENT_API_BASE_URL = 'https://document-api.company-information.service.gov.uk';
-
-const DOWNLOAD_DIR_ENV_VAR = 'COMPANIES_HOUSE_DOWNLOAD_DIR';
+  DOCUMENT_API_BASE_URL,
+  fetchDocumentContent,
+  getDocumentMetadata,
+  normaliseDocumentId,
+} from '../api/endpoints/document.js';
+import { bytesToBase64 } from '../api/base64.js';
+import type { APIClient } from '../api/client.js';
+import type { DocumentMetadata } from '../types/index.js';
 
 type Format = 'pdf' | 'xhtml' | 'xml' | 'json';
 
-/** Map of user-facing format strings to the Accept header value the
- *  Document API expects. Companies House serves most filings as PDF and a
- *  subset (mostly modern accounts) as iXBRL/XHTML or XML. */
-const FORMAT_ACCEPT: Record<Format, string> = {
+const FORMAT_MEDIA_TYPE: Record<Format, string> = {
   pdf: 'application/pdf',
   xhtml: 'application/xhtml+xml',
   xml: 'application/xml',
@@ -70,272 +50,227 @@ const FORMAT_EXTENSION: Record<Format, string> = {
   json: 'json',
 };
 
-// ---------------------------------------------------------------------------
-// Schema
-// ---------------------------------------------------------------------------
+/** Media types that are safe and useful to return as text rather than base64. */
+const TEXT_MEDIA_TYPES = ['application/xhtml+xml', 'application/xml', 'application/json', 'text/'];
+
+/**
+ * Default ceiling on inline content. Base64 inflates bytes by a third and the
+ * result travels through the model's context, so the default is deliberately
+ * modest and the caller raises it knowingly.
+ */
+const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
+const ABSOLUTE_MAX_BYTES = 25 * 1024 * 1024;
 
 const shape = {
   document_id: z
     .string()
     .min(1)
     .describe(
-      'The document id from a filing history item. Typically exposed on a ' +
-        'filing as `links.document_metadata` (e.g. ".../document/ABC123"); ' +
-        'pass just the final path segment here.'
+      'Document id from a filing. get_filings and get_filing_document report it as "Document ID". A full `links.document_metadata` URL or a `/document/{id}` path is also accepted.'
     ),
   format: z
     .enum(['pdf', 'xhtml', 'xml', 'json'])
     .default('pdf')
     .describe(
-      'Preferred content type. Defaults to pdf. The Document API will ' +
-        'return the requested format if available and otherwise fall back ' +
-        'to whatever it holds.'
+      'Preferred content type. Most filings exist only as pdf; modern accounts may also be held as xhtml (iXBRL). If the requested format is not held, the response lists what is and returns nothing.'
     ),
-  return_as: z
-    .enum(['file_path', 'base64'])
-    .default('file_path')
+  max_bytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(ABSOLUTE_MAX_BYTES)
+    .default(DEFAULT_MAX_BYTES)
     .describe(
-      'How to return the document. "file_path" (default) writes the bytes ' +
-        'to disk on the server and returns the local path — works when ' +
-        'the MCP server runs on the same machine as the caller (stdio ' +
-        'mode). "base64" returns the bytes inline as a base64 string in ' +
-        'the response payload — required when the server is remote (HTTP) ' +
-        'and the caller has no access to the server filesystem.'
+      `Refuse to return content larger than this many bytes (default ${DEFAULT_MAX_BYTES}, hard maximum ${ABSOLUTE_MAX_BYTES}). The size is checked against the document metadata before anything is transferred.`
     ),
-  company_number: z
+  metadata_only: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Return only the document metadata — available formats, sizes and page count — without transferring the document.'
+    ),
+  save_to: z
     .string()
     .optional()
     .describe(
-      'Optional — used only for the returned filename so you can tell ' +
-        'multiple downloads apart.'
-    ),
-  transaction_id: z
-    .string()
-    .optional()
-    .describe(
-      'Optional transaction id from the filing history item. Included in ' +
-        'the returned filename and response payload when supplied.'
-    ),
-  save_dir: z
-    .string()
-    .optional()
-    .describe(
-      'Optional absolute path to save the downloaded file into (file_path ' +
-        'mode only). Overrides the `COMPANIES_HOUSE_DOWNLOAD_DIR` env var ' +
-        'and the OS temp directory default. The directory will be created ' +
-        'if it does not already exist. Ignored when `return_as` is ' +
-        '"base64".'
+      'Optional absolute path of a file to write the document to, in addition to returning it. Only meaningful when this server runs on the same machine as the caller; a remote server writes to its own disk, which the caller cannot read. Omit it unless you know the server is local.'
     ),
 };
 const schema = z.object(shape);
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Strip any leading path so callers can pass either a raw id or the full
- *  `links.document_metadata` URL the REST API hands back. */
-function normaliseDocumentId(raw: string): string {
-  const trimmed = raw.trim().replace(/\/+$/, '');
-  const marker = '/document/';
-  const idx = trimmed.lastIndexOf(marker);
-  if (idx >= 0) return trimmed.slice(idx + marker.length);
-  return trimmed.split('/').pop() ?? trimmed;
+interface DocumentResources {
+  available: string[];
+  sizes: Record<string, number>;
 }
 
-/** Resolve the directory to save into, applying precedence:
- *  explicit param > env var > OS temp dir. */
-function resolveSaveDir(paramValue: string | undefined): {
-  dir: string;
-  source: 'param' | 'env' | 'tmpdir';
-} {
-  if (paramValue && paramValue.trim()) {
-    return { dir: paramValue.trim(), source: 'param' };
+function readResources(metadata: DocumentMetadata): DocumentResources {
+  const resources = metadata.resources ?? {};
+  const sizes: Record<string, number> = {};
+  for (const [mediaType, entry] of Object.entries(resources)) {
+    if (typeof entry?.content_length === 'number') sizes[mediaType] = entry.content_length;
   }
-  const envValue = process.env[DOWNLOAD_DIR_ENV_VAR];
-  if (envValue && envValue.trim()) {
-    return { dir: envValue.trim(), source: 'env' };
-  }
-  return { dir: tmpdir(), source: 'tmpdir' };
+  return { available: Object.keys(resources), sizes };
 }
 
-interface FetchedDocument {
-  buffer: Buffer;
-  contentType: string;
-  metadata: Record<string, unknown> | null;
+function isTextMediaType(mediaType: string): boolean {
+  return TEXT_MEDIA_TYPES.some(prefix => mediaType.startsWith(prefix));
 }
 
-async function fetchDocument(
-  documentId: string,
-  format: Format,
-  client: APIClient
-): Promise<FetchedDocument> {
-  const accept = FORMAT_ACCEPT[format];
-  const documentEndpoint = `/document/${documentId}/content`;
-
-  // ---- Step 1: metadata (optional but cheap and helpful for diagnostics).
-  let metadata: Record<string, unknown> | null = null;
-  try {
-    const metaRes = await client.fetchWithAuth(
-      `${DOCUMENT_API_BASE_URL}/document/${encodeURIComponent(documentId)}`,
-      {
-        headers: {
-          Accept: 'application/json',
-        },
-      },
-      `/document/${documentId}`
-    );
-    if (metaRes.ok) {
-      metadata = (await metaRes.json()) as Record<string, unknown>;
-    }
-    // If metadata fetch fails we don't abort — content may still succeed.
-  } catch {
-    /* swallow — metadata is best-effort */
-  }
-
-  // ---- Step 2: content. The Document API responds with a 302 redirect to a
-  //      signed S3 URL. We request redirect:'manual' so the auth header is
-  //      NOT forwarded to S3 (which would reject it), then follow manually.
-  const contentUrl =
-    `${DOCUMENT_API_BASE_URL}/document/` + `${encodeURIComponent(documentId)}/content`;
-
-  const firstRes = await client.fetchWithAuth(
-    contentUrl,
-    {
-      method: 'GET',
-      redirect: 'manual',
-      headers: { Accept: accept },
-    },
-    documentEndpoint
-  );
-
-  let finalRes: Response;
-  if (firstRes.status >= 300 && firstRes.status < 400) {
-    const location = firstRes.headers.get('location');
-    if (!location) {
-      throw new CompaniesHouseAPIError(
-        `Document API returned ${firstRes.status} with no Location header.`,
-        firstRes.status,
-        documentEndpoint
-      );
-    }
-    // Signed S3 URL — no auth header this time.
-    try {
-      finalRes = await fetch(location, { method: 'GET' });
-    } catch (error) {
-      throw CompaniesHouseNetworkError.fromError(error, documentEndpoint);
-    }
-  } else {
-    finalRes = firstRes;
-  }
-
-  if (!finalRes.ok) {
-    const body = await safeReadText(finalRes);
-    throw CompaniesHouseAPIError.fromResponse(finalRes.status, documentEndpoint, body);
-  }
-
-  const arrayBuf = await finalRes.arrayBuffer();
-  const buffer = Buffer.from(arrayBuf);
-  const contentType = finalRes.headers.get('content-type') ?? accept ?? 'application/octet-stream';
-
-  return { buffer, contentType, metadata };
+function documentUri(documentId: string, extension: string): string {
+  return `${DOCUMENT_API_BASE_URL}/document/${documentId}/content.${extension}`;
 }
 
-async function safeReadText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return '';
-  }
+/** Prefer the filename Companies House recorded; fall back to the document id. */
+function documentFilename(metadata: DocumentMetadata, documentId: string, extension: string): string {
+  const recorded = typeof metadata.filename === 'string' ? metadata.filename.trim() : '';
+  const base = recorded || documentId;
+  const safe = base.replace(/[^A-Za-z0-9._-]/g, '_');
+  return safe.toLowerCase().endsWith(`.${extension}`) ? safe : `${safe}.${extension}`;
 }
 
-// ---------------------------------------------------------------------------
-// Tool registration
-// ---------------------------------------------------------------------------
+/**
+ * Write bytes to disk, loading the filesystem module only when asked. The
+ * shared code also runs on runtimes with no filesystem, so the import stays
+ * out of the module graph until a caller opts in.
+ */
+async function writeDocument(path: string, bytes: Uint8Array): Promise<void> {
+  const { writeFile, mkdir } = await import('node:fs/promises');
+  const { dirname } = await import('node:path');
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, bytes);
+}
 
 registerTool({
   name: 'download_filing_document',
   title: 'Download Filing Document',
   description:
-    'Download the actual filed document (PDF / XHTML / XML / JSON) for a ' +
-    'Companies House filing history item via the Document API. By default ' +
-    'writes to disk on the server and returns the file path; pass ' +
-    '`return_as: "base64"` to get the bytes inline (required for remote ' +
-    'MCP servers). Pair with `get_filings` — take the `links.' +
-    'document_metadata` value from a filing and pass its final path ' +
-    'segment as `document_id`.',
+    'Retrieve the document filed for a Companies House filing and return it to you directly — PDF and other binary formats as an embedded binary resource, XHTML, XML and JSON as text. Reads the document metadata first, so it reports the available formats, page count and exact size, and refuses oversized content before transferring it. Get the document id from get_filings. Set metadata_only to inspect a document without retrieving it. Pass save_to only when this server runs on your own machine.',
   inputSchema: schema,
   annotations: DOWNLOAD_TOOL_ANNOTATIONS,
+  group: 'filings',
   async execute(client: APIClient, params: unknown) {
     const input = schema.parse(params);
     const documentId = normaliseDocumentId(input.document_id);
+    const wantedMediaType = FORMAT_MEDIA_TYPE[input.format];
+    const extension = FORMAT_EXTENSION[input.format];
 
     try {
-      const { buffer, contentType, metadata } = await fetchDocument(
-        documentId,
-        input.format,
-        client
-      );
+      const metadata = await getDocumentMetadata(client, documentId);
+      const { available, sizes } = readResources(metadata);
+      const knownSize = sizes[wantedMediaType];
 
-      const commonPayload: Record<string, unknown> = {
-        content_type: contentType,
-        size_bytes: buffer.byteLength,
+      const basePayload: Record<string, unknown> = {
         document_id: documentId,
         requested_format: input.format,
-        ...(input.company_number ? { company_number: input.company_number } : {}),
-        ...(input.transaction_id ? { transaction_id: input.transaction_id } : {}),
-        ...(metadata ? { metadata } : {}),
+        available_formats: available,
+        format_sizes_bytes: sizes,
+        ...(metadata.pages !== undefined ? { pages: metadata.pages } : {}),
+        ...(typeof metadata.filename === 'string' && metadata.filename
+          ? { companies_house_filename: metadata.filename }
+          : {}),
+        metadata,
       };
 
-      // ---- base64 mode: return the bytes inline, no disk write.
-      if (input.return_as === 'base64') {
-        const payload = {
-          ...commonPayload,
-          return_as: 'base64',
-          content_base64: buffer.toString('base64'),
-        };
-        const summary =
-          `Returning ${buffer.byteLength.toLocaleString()} bytes ` +
-          `(${contentType}) inline as base64. Decode with e.g. ` +
-          `\`echo "$content_base64" | base64 -d > out.${
-            FORMAT_EXTENSION[input.format] ?? 'bin'
-          }\`.`;
-        return makeTextResult(summary, payload);
+      const describeAvailable = available.length
+        ? `Formats held for this document: ${available.join(', ')}.`
+        : 'Companies House lists no downloadable formats for this document.';
+
+      if (input.metadata_only) {
+        const lines = [
+          `## Document ${documentId}`,
+          '',
+          describeAvailable,
+          ...(metadata.pages !== undefined ? [`Pages: ${metadata.pages}.`] : []),
+          ...Object.entries(sizes).map(
+            ([mediaType, size]) => `- ${mediaType}: ${size.toLocaleString()} bytes`
+          ),
+        ];
+        return makeTextResult(lines.join('\n'), { ...basePayload, retrieved: false });
       }
 
-      // ---- file_path mode (default): write to disk, return the path.
-      const ext = FORMAT_EXTENSION[input.format] ?? 'bin';
-      const companyPart = input.company_number ? `${input.company_number}_` : '';
-      const txnPart = input.transaction_id ? `${input.transaction_id}_` : '';
-      const filename = `${companyPart}${txnPart}${documentId}_${randomUUID().slice(0, 8)}.${ext}`;
-
-      const { dir: saveDir, source: saveDirSource } = resolveSaveDir(input.save_dir);
-
-      try {
-        await mkdir(saveDir, { recursive: true });
-      } catch (err) {
-        return makeErrorResult(err, { prefix: `Could not create save directory '${saveDir}':` });
+      // Only reject up front when the metadata positively says the format is
+      // absent. Some documents report no `resources` map at all, and those are
+      // still worth attempting.
+      if (available.length > 0 && !available.includes(wantedMediaType)) {
+        return makeTextResult(
+          `Companies House does not hold this document as ${input.format}. ${describeAvailable} Call again with a format from that list.`,
+          { ...basePayload, retrieved: false, reason: 'format_not_available' }
+        );
       }
 
-      const filePath = join(saveDir, filename);
-      await writeFile(filePath, buffer);
+      if (knownSize !== undefined && knownSize > input.max_bytes) {
+        return makeTextResult(
+          `This document is ${knownSize.toLocaleString()} bytes, above the ${input.max_bytes.toLocaleString()}-byte limit for this call, so it was not transferred. Raise max_bytes to retrieve it, choose a smaller format, or use metadata_only to inspect it.`,
+          { ...basePayload, retrieved: false, reason: 'too_large', size_bytes: knownSize }
+        );
+      }
 
-      const payload = {
-        ...commonPayload,
-        return_as: 'file_path',
-        file_path: filePath,
+      const { bytes, contentType } = await fetchDocumentContent(
+        client,
+        documentId,
+        wantedMediaType
+      );
+
+      // The metadata size is authoritative in practice, but the transfer is
+      // checked too so an unexpectedly large body can never be returned.
+      if (bytes.byteLength > input.max_bytes) {
+        return makeTextResult(
+          `This document turned out to be ${bytes.byteLength.toLocaleString()} bytes, above the ${input.max_bytes.toLocaleString()}-byte limit for this call, so it was discarded. Raise max_bytes to retrieve it.`,
+          {
+            ...basePayload,
+            retrieved: false,
+            reason: 'too_large',
+            size_bytes: bytes.byteLength,
+          }
+        );
+      }
+
+      const filename = documentFilename(metadata, documentId, extension);
+      const uri = documentUri(documentId, extension);
+      const payload: Record<string, unknown> = {
+        ...basePayload,
+        retrieved: true,
+        content_type: contentType,
+        size_bytes: bytes.byteLength,
         filename,
-        save_dir: saveDir,
-        save_dir_source: saveDirSource,
+        uri,
       };
 
-      const summary =
-        `Saved ${buffer.byteLength.toLocaleString()} bytes (${contentType}) to ${filePath} ` +
-        `[save_dir source: ${saveDirSource}]`;
+      let savedTo: string | undefined;
+      if (input.save_to) {
+        try {
+          await writeDocument(input.save_to, bytes);
+          savedTo = input.save_to;
+          payload.saved_to = savedTo;
+        } catch (error) {
+          // A failed local write must not lose the document the caller asked
+          // for, so it is reported alongside the content rather than thrown.
+          payload.save_error = error instanceof Error ? error.message : String(error);
+        }
+      }
 
-      return makeTextResult(summary, payload);
+      const summaryParts = [
+        `Retrieved ${bytes.byteLength.toLocaleString()} bytes of ${contentType} for document ${documentId}${
+          metadata.pages !== undefined ? ` (${metadata.pages} page(s))` : ''
+        }.`,
+        'The document is attached to this result as a resource.',
+      ];
+      if (savedTo) summaryParts.push(`Also written to ${savedTo} on the machine running this tool.`);
+      if (payload.save_error) {
+        summaryParts.push(
+          `Could not write to ${input.save_to}: ${String(payload.save_error)}. The document is still attached above.`
+        );
+      }
+
+      const resource = isTextMediaType(contentType)
+        ? { uri, mimeType: contentType, text: new TextDecoder().decode(bytes) }
+        : { uri, mimeType: contentType, blob: bytesToBase64(bytes) };
+
+      return makeResourceResult(summaryParts.join(' '), resource, payload);
     } catch (err) {
-      return makeErrorResult(err);
+      return makeErrorResult(err, {
+        suffix: 'Use get_filings to confirm the document id for this filing.',
+      });
     }
   },
 });

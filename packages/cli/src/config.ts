@@ -27,7 +27,18 @@ export function writeApiKey(key: string): void {
   mkdirSync(CONFIG_DIR, { recursive: true });
   const config = readConfig();
   config.apiKey = key;
+  // Owner-only: the file holds a credential.
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+}
+
+/** Remove the saved key. Returns true when there was one to remove. */
+export function clearApiKey(): boolean {
+  if (!existsSync(CONFIG_FILE)) return false;
+  const config = readConfig();
+  if (!config.apiKey) return false;
+  delete config.apiKey;
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  return true;
 }
 
 /**

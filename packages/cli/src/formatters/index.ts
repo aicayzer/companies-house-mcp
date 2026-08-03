@@ -32,14 +32,54 @@ export function formatDate(dateStr?: string): string {
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
+    // Companies House dates are plain calendar dates and parse as UTC midnight.
+    // Formatting in the host's zone would shift them a day for callers west of
+    // UTC, so the zone is pinned.
     return d.toLocaleDateString('en-GB', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
+      timeZone: 'UTC',
     });
   } catch {
     return dateStr;
   }
+}
+
+export function formatCompanyStatusDetail(detail: string): string {
+  const detailMap: Record<string, string> = {
+    'transferred-from-uk': 'Transferred from the UK',
+    'active-proposal-to-strike-off': 'Active, with a proposal to strike off',
+    'petition-to-restore-dissolved': 'Petition to restore a dissolved company',
+    'transformed-to-se': 'Transformed to an SE',
+    'converted-to-plc': 'Converted to a PLC',
+  };
+  return detailMap[detail] ?? detail.replace(/-/g, ' ');
+}
+
+export interface PaginationState {
+  start_index: number;
+  items_per_page: number;
+  returned: number;
+  total?: number;
+}
+
+/**
+ * A one-line footer telling the caller exactly where it is in a list and how
+ * to ask for the next page. Without this an agent cannot tell a complete
+ * answer from the first page of a long one.
+ */
+export function formatPagination({ start_index, returned, total }: PaginationState): string {
+  if (returned === 0) return '';
+  const first = start_index + 1;
+  const last = start_index + returned;
+  if (total === undefined) {
+    return `_Showing records ${first}–${last}._`;
+  }
+  if (last >= total) {
+    return `_Showing records ${first}–${last} of ${total}. This is the last page._`;
+  }
+  return `_Showing records ${first}–${last} of ${total}. For the next page, call again with start_index: ${last} and the same items_per_page._`;
 }
 
 export function formatCompanyStatus(status: string): string {
@@ -140,6 +180,15 @@ export function formatNatureOfControl(nature: string): string {
   return controlMap[nature] ?? nature.replace(/-/g, ' ');
 }
 
+/**
+ * `accounts.overdue` is deprecated in favour of `accounts.next_accounts.overdue`.
+ * The newer field is preferred and the old one is only a fallback for records
+ * that still carry it.
+ */
+export function accountsOverdue(profile: CompanyProfile): boolean {
+  return Boolean(profile.accounts?.next_accounts?.overdue ?? profile.accounts?.overdue);
+}
+
 export function formatCompanyProfile(profile: CompanyProfile): string {
   const lines: string[] = [
     `## ${profile.company_name}`,
@@ -148,6 +197,12 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
     `**Status:** ${formatCompanyStatus(profile.company_status)}`,
     `**Type:** ${formatCompanyType(profile.type)}`,
   ];
+
+  // A company can be `active` and simultaneously subject to a strike-off
+  // proposal, so the detail matters as much as the headline status.
+  if (profile.company_status_detail) {
+    lines.push(`**Status detail:** ${formatCompanyStatusDetail(profile.company_status_detail)}`);
+  }
 
   if (profile.date_of_creation) {
     lines.push(`**Incorporated:** ${formatDate(profile.date_of_creation)}`);
@@ -166,9 +221,9 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
   }
 
   if (profile.accounts) {
-    const hasAccountsData = profile.accounts.last_accounts?.made_up_to ||
-      profile.accounts.next_accounts?.due_on ||
-      profile.accounts.overdue || profile.accounts.next_accounts?.overdue;
+    const overdue = accountsOverdue(profile);
+    const hasAccountsData =
+      profile.accounts.last_accounts?.made_up_to || profile.accounts.next_accounts?.due_on || overdue;
     if (hasAccountsData) {
       lines.push('', '### Accounts');
       if (profile.accounts.last_accounts?.made_up_to) {
@@ -177,8 +232,8 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
       if (profile.accounts.next_accounts?.due_on) {
         lines.push(`- Next accounts due: ${formatDate(profile.accounts.next_accounts.due_on)}`);
       }
-      if (profile.accounts.overdue || profile.accounts.next_accounts?.overdue) {
-        lines.push('- **ACCOUNTS OVERDUE**');
+      if (overdue) {
+        lines.push('- **Accounts are overdue**');
       }
     }
   }
@@ -203,16 +258,24 @@ export function formatCompanyProfile(profile: CompanyProfile): string {
     }
   }
 
-  const flags: string[] = [];
-  if (profile.has_insolvency_history) flags.push('Insolvency history');
-  if (profile.has_charges) flags.push('Has charges');
-  if (profile.has_been_liquidated) flags.push('Has been liquidated');
-  if (profile.is_community_interest_company) flags.push('Community Interest Company');
-  if (profile.registered_office_is_in_dispute) flags.push('Registered office in dispute');
-  if (profile.undeliverable_registered_office_address) flags.push('Undeliverable registered office');
+  // `has_charges` / `has_insolvency_history` are deprecated and mean "has or
+  // had", so they are described as history rather than a current state. The
+  // presence of the matching link is the supported signal.
+  const notes: string[] = [];
+  if (profile.links?.insolvency ?? profile.has_insolvency_history) {
+    notes.push('Insolvency records exist (see get_insolvency)');
+  }
+  if (profile.links?.charges ?? profile.has_charges) {
+    notes.push('Charges recorded, current or satisfied (see get_charges)');
+  }
+  if (profile.is_community_interest_company) notes.push('Community Interest Company');
+  if (profile.registered_office_is_in_dispute) notes.push('Registered office address in dispute');
+  if (profile.undeliverable_registered_office_address) {
+    notes.push('Registered office address recorded as undeliverable');
+  }
 
-  if (flags.length) {
-    lines.push('', `**Flags:** ${flags.join(' | ')}`);
+  if (notes.length) {
+    lines.push('', '### Also on the record', '', ...notes.map(note => `- ${note}`));
   }
 
   return lines.join('\n');
@@ -234,6 +297,25 @@ export function formatCompanySearchResults(items: CompanySearchItem[], total: nu
   return lines.join('\n');
 }
 
+export interface OfficerCounts {
+  total?: number;
+  active?: number;
+  resigned?: number;
+}
+
+/**
+ * Officer counts come from the API's own `active_count` / `resigned_count`,
+ * not from the length of whichever page was fetched — a page can contain none
+ * of a company's active officers.
+ */
+export function formatOfficerCounts(counts: OfficerCounts): string {
+  const parts: string[] = [];
+  if (counts.total !== undefined) parts.push(`${counts.total} on the register`);
+  if (counts.active !== undefined) parts.push(`${counts.active} active`);
+  if (counts.resigned !== undefined) parts.push(`${counts.resigned} resigned`);
+  return parts.join(', ');
+}
+
 export function formatOfficers(items: CompanyOfficer[], total: number): string {
   if (!items.length) return 'No officers found.';
   const lines = [`${total} officer(s):\n`];
@@ -251,6 +333,13 @@ export function formatOfficers(items: CompanyOfficer[], total: number): string {
   return lines.join('\n');
 }
 
+/** The document id a filing points at, if a document exists for it. */
+export function filingDocumentId(filing: FilingHistoryItem): string | undefined {
+  const url = filing.links?.document_metadata;
+  if (!url) return undefined;
+  return url.split('/').filter(Boolean).pop();
+}
+
 export function formatFilings(items: FilingHistoryItem[], total: number): string {
   if (!items.length) return 'No filing history found.';
   const lines = [`${total} filing(s):\n`];
@@ -260,10 +349,55 @@ export function formatFilings(items: FilingHistoryItem[], total: number): string
     lines.push(`- **Category:** ${filing.category}`);
     lines.push(`- **Type:** ${filing.type}`);
     if (filing.transaction_id) lines.push(`- **Transaction ID:** ${filing.transaction_id}`);
+    const documentId = filingDocumentId(filing);
+    // Surfaced so download_filing_document can be called without a second
+    // round trip to find the id.
+    if (documentId) lines.push(`- **Document ID:** ${documentId}`);
+    if (filing.pages) lines.push(`- **Pages:** ${filing.pages}`);
     if (filing.paper_filed) lines.push('- *Paper filed*');
     lines.push('');
   }
   return lines.join('\n');
+}
+
+export interface ChargeCounts {
+  total: number;
+  satisfied?: number;
+  part_satisfied?: number;
+  outstanding?: number;
+}
+
+/**
+ * Outstanding charge counts come from the API's aggregate counts rather than
+ * from filtering a single page, so they stay correct for companies with more
+ * charges than fit in one request.
+ */
+export function chargeCounts(list: {
+  total_count?: number;
+  satisfied_count?: number;
+  part_satisfied_count?: number;
+}): ChargeCounts {
+  const total = list.total_count ?? 0;
+  const satisfied = list.satisfied_count;
+  const partSatisfied = list.part_satisfied_count;
+  const outstanding =
+    satisfied === undefined && partSatisfied === undefined
+      ? undefined
+      : Math.max(0, total - (satisfied ?? 0) - (partSatisfied ?? 0));
+  return {
+    total,
+    ...(satisfied !== undefined ? { satisfied } : {}),
+    ...(partSatisfied !== undefined ? { part_satisfied: partSatisfied } : {}),
+    ...(outstanding !== undefined ? { outstanding } : {}),
+  };
+}
+
+export function formatChargeCounts(counts: ChargeCounts): string {
+  const parts = [`${counts.total} charge(s) on the register`];
+  if (counts.outstanding !== undefined) parts.push(`${counts.outstanding} outstanding`);
+  if (counts.part_satisfied) parts.push(`${counts.part_satisfied} part-satisfied`);
+  if (counts.satisfied !== undefined) parts.push(`${counts.satisfied} satisfied`);
+  return parts.join(', ');
 }
 
 export function formatCharges(items: Charge[], total: number): string {
@@ -287,9 +421,22 @@ export function formatCharges(items: Charge[], total: number): string {
   return lines.join('\n');
 }
 
-export function formatPSCs(items: PSCItem[], total: number): string {
+/**
+ * Ceased PSCs stay in the default list response. Presenting them without the
+ * distinction would show former controllers as current ones, so the header
+ * always states the split.
+ */
+export function formatPSCs(
+  items: PSCItem[],
+  total: number,
+  counts?: { active?: number; ceased?: number }
+): string {
   if (!items.length) return 'No persons with significant control found.';
-  const lines = [`${total} PSC(s):\n`];
+  const split =
+    counts && (counts.active !== undefined || counts.ceased !== undefined)
+      ? ` (${counts.active ?? 0} active, ${counts.ceased ?? 0} ceased)`
+      : '';
+  const lines = [`${total} PSC(s)${split}:\n`];
   for (const psc of items) {
     const status = psc.ceased_on ? '(Ceased)' : '(Active)';
     lines.push(`### ${psc.name} ${status}`);

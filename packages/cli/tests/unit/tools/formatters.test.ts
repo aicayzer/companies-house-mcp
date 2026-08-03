@@ -117,19 +117,64 @@ describe('formatCompanyProfile', () => {
     expect(result).toContain('1 Test Street');
   });
 
-  it('shows overdue flags', () => {
+  it('shows overdue filings', () => {
     const profile = {
       company_name: 'OVERDUE LTD',
       company_number: '99999999',
       company_status: 'active',
       type: 'ltd',
-      accounts: { overdue: true },
+      accounts: { next_accounts: { overdue: true } },
       confirmation_statement: { overdue: true },
     };
 
     const result = formatCompanyProfile(profile);
-    expect(result).toContain('ACCOUNTS OVERDUE');
+    expect(result).toContain('Accounts are overdue');
     expect(result).toContain('CONFIRMATION STATEMENT OVERDUE');
+  });
+
+  it('reads the deprecated accounts.overdue flag when the current one is absent', () => {
+    const result = formatCompanyProfile({
+      company_name: 'LEGACY LTD',
+      company_number: '99999998',
+      company_status: 'active',
+      type: 'ltd',
+      accounts: { overdue: true },
+    });
+    expect(result).toContain('Accounts are overdue');
+  });
+
+  it('surfaces company_status_detail alongside the headline status', () => {
+    const result = formatCompanyProfile({
+      company_name: 'STRIKE OFF LTD',
+      company_number: '99999997',
+      company_status: 'active',
+      company_status_detail: 'active-proposal-to-strike-off',
+      type: 'ltd',
+    });
+    expect(result).toContain('Status detail:');
+    expect(result).toContain('proposal to strike off');
+  });
+
+  it('describes charges as history rather than a current encumbrance', () => {
+    const result = formatCompanyProfile({
+      company_name: 'CHARGED LTD',
+      company_number: '99999996',
+      company_status: 'active',
+      type: 'ltd',
+      links: { charges: '/company/99999996/charges' },
+    });
+    expect(result).toContain('current or satisfied');
+  });
+
+  it('formats dates in UTC so they do not shift by a day', () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      expect(formatDate('2026-02-04')).toBe('4 February 2026');
+    } finally {
+      if (previousTz === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTz;
+    }
   });
 });
 
