@@ -1,13 +1,32 @@
 import type { z } from 'zod';
-import type { APIClient } from '../api/client.js';
+import {
+  CompaniesHouseAPIError,
+  CompaniesHouseNetworkError,
+  type APIClient,
+} from '../api/client.js';
 
-/** Standard tool annotations for all tools (read-only, hits external API) */
+export interface ToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+}
+
+/** Standard annotations for tools that only read from Companies House. */
 export const TOOL_ANNOTATIONS = {
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
   openWorldHint: true,
-} as const;
+} as const satisfies ToolAnnotations;
+
+/** Conservative annotations for the tool that can write a document to disk. */
+export const DOWNLOAD_TOOL_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+} as const satisfies ToolAnnotations;
 
 export interface ToolResult {
   [key: string]: unknown;
@@ -16,24 +35,28 @@ export interface ToolResult {
   isError?: boolean;
 }
 
-/**
- * A Zod raw shape — an object where keys are field names and values are Zod schemas.
- * This is what the MCP SDK expects for `inputSchema`.
- */
-export type ZodRawShape = Record<string, z.ZodTypeAny>;
-
 export interface ToolDefinition {
   name: string;
+  title: string;
   description: string;
-  /** Zod raw shape for the MCP SDK (e.g. { company_number: z.string() }) */
-  inputSchema: ZodRawShape;
-  /**
-   * Full Zod object schema for internal parsing/validation (with defaults, refines, etc.).
-   * If not provided, the server will just pass the raw params to execute.
-   */
-  parseSchema?: z.ZodType;
-  annotations: typeof TOOL_ANNOTATIONS;
+  inputSchema: z.ZodObject;
+  annotations: ToolAnnotations;
   execute: (client: APIClient, params: unknown) => Promise<ToolResult>;
+}
+
+export type ToolErrorKind = 'companies_house_api' | 'network' | 'internal';
+
+export interface StructuredToolError {
+  kind: ToolErrorKind;
+  message: string;
+  status_code?: number;
+  endpoint?: string;
+  retryable: boolean;
+}
+
+interface ErrorResultOptions {
+  prefix?: string;
+  suffix?: string;
 }
 
 const tools = new Map<string, ToolDefinition>();
@@ -57,9 +80,48 @@ export function makeTextResult(text: string, structured?: Record<string, unknown
   };
 }
 
-export function makeErrorResult(message: string): ToolResult {
+export function makeErrorResult(error: unknown, options: ErrorResultOptions = {}): ToolResult {
+  const details = classifyError(error);
+  const message = [options.prefix, details.message, options.suffix]
+    .filter((part): part is string => Boolean(part))
+    .join(' ');
+  const structuredError: StructuredToolError = { ...details, message };
+
   return {
     content: [{ type: 'text', text: `Error: ${message}` }],
+    structuredContent: { error: structuredError },
     isError: true,
+  };
+}
+
+function classifyError(error: unknown): StructuredToolError {
+  if (error instanceof CompaniesHouseAPIError) {
+    return {
+      kind: 'companies_house_api',
+      message: error.message,
+      status_code: error.statusCode,
+      endpoint: error.endpoint,
+      retryable: error.statusCode === 429 || error.statusCode >= 500,
+    };
+  }
+
+  if (error instanceof CompaniesHouseNetworkError) {
+    return {
+      kind: 'network',
+      message: error.message,
+      endpoint: error.endpoint,
+      retryable: true,
+    };
+  }
+
+  return {
+    kind: 'internal',
+    message:
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : 'Unexpected internal error.',
+    retryable: false,
   };
 }

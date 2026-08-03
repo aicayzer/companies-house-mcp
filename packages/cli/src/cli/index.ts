@@ -1,19 +1,17 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'node:fs';
 import { APIClient } from '../api/client.js';
 import { getTool, getAllTools } from '../tools/registry.js';
 import { resolveApiKey, writeApiKey, getConfigPath } from '../config.js';
 import { markdownToTerminal } from './terminal-format.js';
 
-// Import all tools to trigger registration
-import '../tools/search.js';
-import '../tools/company.js';
-import '../tools/officers.js';
-import '../tools/ownership.js';
-import '../tools/filings.js';
-import '../tools/financial.js';
-import '../tools/extended.js';
-import '../tools/composite.js';
+// Import the canonical tool set to trigger registration.
+import '../tools/all.js';
+
+const { version: cliVersion } = JSON.parse(
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+) as { version: string };
 
 function getClient(keyFlag?: string): APIClient {
   const resolved = resolveApiKey(keyFlag);
@@ -36,7 +34,10 @@ interface CommandDef {
   tool: string;
   description: string;
   positional?: string; // maps positional arg to this tool param
-  flags?: Record<string, { param: string; type: 'string' | 'number' | 'boolean'; description: string }>;
+  flags?: Record<
+    string,
+    { param: string; type: 'string' | 'number' | 'boolean'; description: string }
+  >;
 }
 
 const COMMANDS: CommandDef[] = [
@@ -226,7 +227,9 @@ function handleConfigCommand(args: string[]): void {
     } else {
       const masked = resolved.key.slice(0, 4) + '...' + resolved.key.slice(-4);
       console.log(`API key:  ${masked}`);
-      console.log(`Source:   ${resolved.source === 'env' ? 'COMPANIES_HOUSE_API_KEY env var' : resolved.source === 'config' ? getConfigPath() : 'flag'}`);
+      console.log(
+        `Source:   ${resolved.source === 'env' ? 'COMPANIES_HOUSE_API_KEY env var' : resolved.source === 'config' ? getConfigPath() : 'flag'}`
+      );
     }
     return;
   }
@@ -247,9 +250,8 @@ async function main(): Promise<void> {
 
   // Handle "serve" command — start MCP server
   if (args[0] === 'serve') {
-    const serverArgs = args.slice(1);
-    process.argv = [process.argv[0]!, process.argv[1]!, ...serverArgs];
-    await import('../server/index.js');
+    const { runServer } = await import('../server/index.js');
+    await runServer({ version: cliVersion, argv: args.slice(1) });
     return;
   }
 

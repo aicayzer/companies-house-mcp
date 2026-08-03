@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { APIClient, CompaniesHouseAPIError } from '../../../src/api/client.js';
+import {
+  APIClient,
+  CompaniesHouseAPIError,
+  CompaniesHouseNetworkError,
+} from '../../../src/api/client.js';
 
 describe('APIClient', () => {
   const originalFetch = globalThis.fetch;
@@ -21,6 +25,18 @@ describe('APIClient', () => {
     expect(capturedHeaders?.get('Authorization')).toBe(
       'Basic ' + Buffer.from('test-key:').toString('base64')
     );
+  });
+
+  it('wraps authenticated fetch failures as typed network errors', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    const client = new APIClient({ api_key: 'test-key', cache_enabled: false });
+
+    await expect(
+      client.fetchWithAuth('https://api.company-information.service.gov.uk/test', {}, '/test')
+    ).rejects.toMatchObject({
+      name: 'CompaniesHouseNetworkError',
+      endpoint: '/test',
+    } satisfies Partial<CompaniesHouseNetworkError>);
   });
 
   it('returns parsed JSON on success', async () => {
@@ -118,6 +134,13 @@ describe('CompaniesHouseAPIError', () => {
     expect(error.statusCode).toBe(404);
     expect(error.endpoint).toBe('/company/test');
     expect(error.message).toContain('Not found');
+  });
+
+  it('describes upstream rate limits without claiming the request is queued', () => {
+    const error = CompaniesHouseAPIError.fromResponse(429, '/company/test');
+
+    expect(error.message).toContain('Try again later');
+    expect(error.message).not.toContain('queued');
   });
 
   it('includes response body in error', () => {

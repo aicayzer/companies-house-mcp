@@ -13,9 +13,10 @@ const schema = z.object(shape);
 
 registerTool({
   name: 'get_company_profile',
+  title: 'Get Company Profile',
   description:
     'Get the full profile for a UK company: name, status, type, registered address, SIC codes, accounts dates, confirmation statement dates, previous names, and flags (insolvency, charges, liquidation). Use the company number from search_companies.',
-  inputSchema: shape,
+  inputSchema: schema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const { company_number } = schema.parse(params);
@@ -26,9 +27,9 @@ registerTool({
         profile as unknown as Record<string, unknown>
       );
     } catch (err) {
-      return makeErrorResult(
-        `${(err as Error).message}. Try search_companies to find the correct company number.`
-      );
+      return makeErrorResult(err, {
+        suffix: 'Try search_companies to find the correct company number.',
+      });
     }
   },
 });

@@ -15,9 +15,10 @@ const chargesSchema = z.object(chargesShape);
 
 registerTool({
   name: 'get_charges',
+  title: 'Get Company Charges',
   description:
     'Get charges (mortgages, debentures) registered against a UK company. Shows outstanding and satisfied charges, chargee details, and particulars. Outstanding charges indicate active security interests.',
-  inputSchema: chargesShape,
+  inputSchema: chargesSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const input = chargesSchema.parse(params);
@@ -35,7 +36,7 @@ registerTool({
       if ((err as { statusCode?: number }).statusCode === 404) {
         return makeTextResult('No charges found for this company.', { items: [], total_count: 0 });
       }
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
@@ -48,9 +49,10 @@ const insolvencySchema = z.object(insolvencyShape);
 
 registerTool({
   name: 'get_insolvency',
+  title: 'Get Company Insolvency',
   description:
     'Get insolvency information for a UK company. Shows insolvency cases, proceedings, practitioners, dates, and status. Returns empty if the company has no insolvency history.',
-  inputSchema: insolvencyShape,
+  inputSchema: insolvencySchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const { company_number } = insolvencySchema.parse(params);
@@ -65,7 +67,7 @@ registerTool({
       if ((err as { statusCode?: number }).statusCode === 404) {
         return makeTextResult('No insolvency history for this company.', { cases: [] });
       }
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });

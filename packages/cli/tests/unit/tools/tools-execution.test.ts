@@ -2,15 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { APIClient } from '../../../src/api/client.js';
 import { getTool } from '../../../src/tools/registry.js';
 
-// Import tools to trigger registration
-import '../../../src/tools/search.js';
-import '../../../src/tools/company.js';
-import '../../../src/tools/officers.js';
-import '../../../src/tools/ownership.js';
-import '../../../src/tools/filings.js';
-import '../../../src/tools/financial.js';
-import '../../../src/tools/extended.js';
-import '../../../src/tools/composite.js';
+import '../../../src/tools/all.js';
 
 const MOCK_PROFILE = {
   company_name: 'ACME LTD',
@@ -18,7 +10,11 @@ const MOCK_PROFILE = {
   company_status: 'active',
   type: 'ltd',
   date_of_creation: '2020-01-01',
-  registered_office_address: { address_line_1: '1 Test St', locality: 'London', postal_code: 'EC1A 1BB' },
+  registered_office_address: {
+    address_line_1: '1 Test St',
+    locality: 'London',
+    postal_code: 'EC1A 1BB',
+  },
   sic_codes: ['62011'],
   accounts: { overdue: false },
   confirmation_statement: { overdue: false },
@@ -28,8 +24,18 @@ const MOCK_PROFILE = {
 
 const MOCK_OFFICERS = {
   items: [
-    { name: 'SMITH, John', officer_role: 'director', appointed_on: '2020-01-01', nationality: 'British' },
-    { name: 'DOE, Jane', officer_role: 'secretary', appointed_on: '2020-06-01', resigned_on: '2023-01-01' },
+    {
+      name: 'SMITH, John',
+      officer_role: 'director',
+      appointed_on: '2020-01-01',
+      nationality: 'British',
+    },
+    {
+      name: 'DOE, Jane',
+      officer_role: 'secretary',
+      appointed_on: '2020-06-01',
+      resigned_on: '2023-01-01',
+    },
   ],
   total_results: 2,
   items_per_page: 50,
@@ -54,16 +60,37 @@ const MOCK_PSCS = {
 
 const MOCK_CHARGES = {
   items: [
-    { status: 'outstanding', classification: { description: 'Debenture', type: 'charge' }, created_on: '2021-01-01' },
-    { status: 'fully-satisfied', classification: { description: 'Mortgage', type: 'charge' }, created_on: '2019-01-01', satisfied_on: '2022-01-01' },
+    {
+      status: 'outstanding',
+      classification: { description: 'Debenture', type: 'charge' },
+      created_on: '2021-01-01',
+    },
+    {
+      status: 'fully-satisfied',
+      classification: { description: 'Mortgage', type: 'charge' },
+      created_on: '2019-01-01',
+      satisfied_on: '2022-01-01',
+    },
   ],
   total_count: 2,
 };
 
 const MOCK_FILINGS = {
   items: [
-    { transaction_id: 'txn1', date: '2024-01-15', type: 'AA', description: 'Annual accounts', category: 'accounts' },
-    { transaction_id: 'txn2', date: '2024-03-01', type: 'CS01', description: 'Confirmation statement', category: 'confirmation-statement' },
+    {
+      transaction_id: 'txn1',
+      date: '2024-01-15',
+      type: 'AA',
+      description: 'Annual accounts',
+      category: 'accounts',
+    },
+    {
+      transaction_id: 'txn2',
+      date: '2024-03-01',
+      type: 'CS01',
+      description: 'Confirmation statement',
+      category: 'confirmation-statement',
+    },
   ],
   total_count: 2,
   items_per_page: 25,
@@ -73,8 +100,19 @@ const MOCK_FILINGS = {
 
 const MOCK_SEARCH = {
   items: [
-    { title: 'ACME LTD', company_number: '12345678', company_status: 'active', company_type: 'ltd', date_of_creation: '2020-01-01' },
-    { title: 'ACME PLC', company_number: '00000002', company_status: 'dissolved', company_type: 'plc' },
+    {
+      title: 'ACME LTD',
+      company_number: '12345678',
+      company_status: 'active',
+      company_type: 'ltd',
+      date_of_creation: '2020-01-01',
+    },
+    {
+      title: 'ACME PLC',
+      company_number: '00000002',
+      company_status: 'dissolved',
+      company_type: 'plc',
+    },
   ],
   total_results: 2,
   items_per_page: 20,
@@ -84,7 +122,11 @@ const MOCK_SEARCH = {
 
 const MOCK_OFFICER_SEARCH = {
   items: [
-    { title: 'SMITH, John', appointment_count: 3, links: { self: '/officers/abc123/appointments' } },
+    {
+      title: 'SMITH, John',
+      appointment_count: 3,
+      links: { self: '/officers/abc123/appointments' },
+    },
   ],
   total_results: 1,
   items_per_page: 20,
@@ -97,13 +139,21 @@ const MOCK_APPOINTMENTS = {
     {
       officer_role: 'director',
       appointed_on: '2020-01-01',
-      appointed_to: { company_number: '12345678', company_name: 'ACME LTD', company_status: 'active' },
+      appointed_to: {
+        company_number: '12345678',
+        company_name: 'ACME LTD',
+        company_status: 'active',
+      },
     },
     {
       officer_role: 'director',
       appointed_on: '2018-01-01',
       resigned_on: '2022-01-01',
-      appointed_to: { company_number: '99999999', company_name: 'OLD CO LTD', company_status: 'dissolved' },
+      appointed_to: {
+        company_number: '99999999',
+        company_name: 'OLD CO LTD',
+        company_status: 'dissolved',
+      },
     },
   ],
   total_results: 2,
@@ -181,7 +231,10 @@ describe('Tool Execution (mocked)', () => {
 
   it('get_officers includes resigned when requested', async () => {
     const tool = getTool('get_officers')!;
-    const result = await tool.execute(client, { company_number: '12345678', include_resigned: true });
+    const result = await tool.execute(client, {
+      company_number: '12345678',
+      include_resigned: true,
+    });
     expect(result.isError).toBeFalsy();
     expect(result.content[0]!.text).toContain('SMITH, John');
     expect(result.content[0]!.text).toContain('DOE, Jane');

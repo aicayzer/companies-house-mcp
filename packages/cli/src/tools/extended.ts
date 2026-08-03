@@ -2,7 +2,10 @@ import { z } from 'zod';
 import { registerTool, TOOL_ANNOTATIONS, makeTextResult, makeErrorResult } from './registry.js';
 import { getCompanyRegisters } from '../api/endpoints/company.js';
 import { getExemptions, getUKEstablishments } from '../api/endpoints/exemptions.js';
-import { getNaturalDisqualification, getCorporateDisqualification } from '../api/endpoints/officers.js';
+import {
+  getNaturalDisqualification,
+  getCorporateDisqualification,
+} from '../api/endpoints/officers.js';
 import { getFilingItem } from '../api/endpoints/filing.js';
 import { formatDate, formatAddress } from '../formatters/index.js';
 import type { APIClient } from '../api/client.js';
@@ -15,9 +18,10 @@ const registersSchema = z.object(registersShape);
 
 registerTool({
   name: 'get_company_registers',
+  title: 'Get Company Registers',
   description:
     'Get the statutory registers for a UK company — where the company holds its registers of directors, secretaries, members, and PSCs. Shows whether registers are held at Companies House or elsewhere.',
-  inputSchema: registersShape,
+  inputSchema: registersSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const { company_number } = registersSchema.parse(params);
@@ -41,7 +45,7 @@ registerTool({
       if ((err as { statusCode?: number }).statusCode === 404) {
         return makeTextResult('No register information available for this company.', {});
       }
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
@@ -54,9 +58,10 @@ const exemptionsSchema = z.object(exemptionsShape);
 
 registerTool({
   name: 'get_exemptions',
+  title: 'Get Company Exemptions',
   description:
     'Get exemptions for a UK company (e.g. exemption from filing full accounts, PSC exemptions). Most companies have no exemptions.',
-  inputSchema: exemptionsShape,
+  inputSchema: exemptionsSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const { company_number } = exemptionsSchema.parse(params);
@@ -68,7 +73,9 @@ registerTool({
           lines.push(`### ${key}`);
           lines.push(`Type: ${exemption.exemption_type}`);
           for (const item of exemption.items) {
-            lines.push(`- From: ${formatDate(item.exempt_from)}${item.exempt_to ? ` to ${formatDate(item.exempt_to)}` : ' (ongoing)'}`);
+            lines.push(
+              `- From: ${formatDate(item.exempt_from)}${item.exempt_to ? ` to ${formatDate(item.exempt_to)}` : ' (ongoing)'}`
+            );
           }
           lines.push('');
         }
@@ -80,22 +87,25 @@ registerTool({
       if ((err as { statusCode?: number }).statusCode === 404) {
         return makeTextResult('No exemptions for this company.', {});
       }
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── get_uk_establishments ───────────────────────────────────────────────
 const establishmentsShape = {
-  company_number: z.string().describe('Companies House company number (typically an overseas company)'),
+  company_number: z
+    .string()
+    .describe('Companies House company number (typically an overseas company)'),
 };
 const establishmentsSchema = z.object(establishmentsShape);
 
 registerTool({
   name: 'get_uk_establishments',
+  title: 'Get UK Establishments',
   description:
     'Get UK establishments of an overseas company. Returns a list of UK branches/establishments registered at Companies House.',
-  inputSchema: establishmentsShape,
+  inputSchema: establishmentsSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const { company_number } = establishmentsSchema.parse(params);
@@ -103,7 +113,10 @@ registerTool({
       const result = await getUKEstablishments(client, company_number);
       const items = result.items ?? [];
       if (!items.length) {
-        return makeTextResult('No UK establishments found.', result as unknown as Record<string, unknown>);
+        return makeTextResult(
+          'No UK establishments found.',
+          result as unknown as Record<string, unknown>
+        );
       }
       const lines = [`${items.length} UK establishment(s):\n`];
       for (const est of items) {
@@ -115,7 +128,7 @@ registerTool({
       }
       return makeTextResult(lines.join('\n'), result as unknown as Record<string, unknown>);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
@@ -129,9 +142,10 @@ const disqualificationsSchema = z.object(disqualificationsShape);
 
 registerTool({
   name: 'get_officer_disqualifications',
+  title: 'Get Officer Disqualifications',
   description:
     'Check if an officer has been disqualified from acting as a company director. Returns disqualification details including reason, duration, court name, and associated companies.',
-  inputSchema: disqualificationsShape,
+  inputSchema: disqualificationsSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const input = disqualificationsSchema.parse(params);
@@ -146,14 +160,18 @@ registerTool({
 
       const lines: string[] = ['## Officer Disqualifications\n'];
       if (result.forename || result.surname) {
-        lines.push(`**Name:** ${[result.title, result.forename, result.other_forenames, result.surname].filter(Boolean).join(' ')}`);
+        lines.push(
+          `**Name:** ${[result.title, result.forename, result.other_forenames, result.surname].filter(Boolean).join(' ')}`
+        );
       }
       for (const disq of result.disqualifications) {
         lines.push(`\n### Disqualification`);
         lines.push(`- **From:** ${formatDate(disq.disqualified_from)}`);
         lines.push(`- **Until:** ${formatDate(disq.disqualified_until)}`);
         if (disq.reason) {
-          lines.push(`- **Reason:** ${disq.reason.description_identifier ?? disq.reason.act} ${disq.reason.section}`);
+          lines.push(
+            `- **Reason:** ${disq.reason.description_identifier ?? disq.reason.act} ${disq.reason.section}`
+          );
         }
         if (disq.court_name) lines.push(`- **Court:** ${disq.court_name}`);
         if (disq.heard_on) lines.push(`- **Heard:** ${formatDate(disq.heard_on)}`);
@@ -167,7 +185,7 @@ registerTool({
       if ((err as { statusCode?: number }).statusCode === 404) {
         return makeTextResult('No disqualifications found for this officer.', {});
       }
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
@@ -181,9 +199,10 @@ const filingDocSchema = z.object(filingDocShape);
 
 registerTool({
   name: 'get_filing_document',
+  title: 'Get Filing Document Metadata',
   description:
     'Get metadata and details for a specific filing document. Use the transaction_id from get_filings results.',
-  inputSchema: filingDocShape,
+  inputSchema: filingDocSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const input = filingDocSchema.parse(params);
@@ -207,7 +226,7 @@ registerTool({
       }
       return makeTextResult(lines.join('\n'), result as unknown as Record<string, unknown>);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });

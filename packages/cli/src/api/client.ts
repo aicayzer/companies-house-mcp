@@ -20,7 +20,7 @@ export class CompaniesHouseAPIError extends Error {
       401: 'Invalid API key. Check your COMPANIES_HOUSE_API_KEY.',
       403: 'Access forbidden. Your API key may not have access to this endpoint.',
       404: 'Not found. Check the company number or officer ID.',
-      429: 'Rate limit exceeded. Request has been queued.',
+      429: 'Rate limit exceeded. Try again later.',
       500: 'Companies House API internal error. Try again later.',
       502: 'Companies House API is temporarily unavailable.',
       503: 'Companies House API is temporarily unavailable.',
@@ -31,16 +31,36 @@ export class CompaniesHouseAPIError extends Error {
   }
 }
 
+export class CompaniesHouseNetworkError extends Error {
+  constructor(
+    message: string,
+    public readonly endpoint: string,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = 'CompaniesHouseNetworkError';
+  }
+
+  static fromError(error: unknown, endpoint: string): CompaniesHouseNetworkError {
+    const detail = error instanceof Error && error.message ? ` ${error.message}` : '';
+    return new CompaniesHouseNetworkError(
+      `Unable to reach Companies House.${detail}`,
+      endpoint,
+      error instanceof Error ? { cause: error } : undefined
+    );
+  }
+}
+
 /** TTL values per endpoint category (milliseconds) */
 export const CACHE_TTLS = {
-  profile: 30 * 60 * 1000,     // 30 min
-  search: 5 * 60 * 1000,       // 5 min
-  officers: 15 * 60 * 1000,    // 15 min
-  filings: 5 * 60 * 1000,      // 5 min
-  charges: 30 * 60 * 1000,     // 30 min
-  psc: 15 * 60 * 1000,         // 15 min
-  insolvency: 30 * 60 * 1000,  // 30 min
-  registers: 30 * 60 * 1000,   // 30 min
+  profile: 30 * 60 * 1000, // 30 min
+  search: 5 * 60 * 1000, // 5 min
+  officers: 15 * 60 * 1000, // 15 min
+  filings: 5 * 60 * 1000, // 5 min
+  charges: 30 * 60 * 1000, // 30 min
+  psc: 15 * 60 * 1000, // 15 min
+  insolvency: 30 * 60 * 1000, // 30 min
+  registers: 30 * 60 * 1000, // 30 min
 } as const;
 
 export class APIClient {
@@ -75,9 +95,6 @@ export class APIClient {
       if (cached !== undefined) return cached;
     }
 
-    // Rate limit
-    await this.rateLimiter.acquire();
-
     // Fetch with retry
     const result = await this.fetchWithRetry<T>(url, path);
 
@@ -89,16 +106,40 @@ export class APIClient {
     return result;
   }
 
+  /**
+   * Fetch a Companies House endpoint with this client's credential.
+   * Callers must only pass trusted Companies House URLs because the API key
+   * is added to the request.
+   */
+  async fetchWithAuth(
+    input: string | URL,
+    init: RequestInit = {},
+    endpoint = input.toString()
+  ): Promise<Response> {
+    await this.rateLimiter.acquire();
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', this.authHeader);
+
+    try {
+      return await fetch(input, { ...init, headers });
+    } catch (error) {
+      throw CompaniesHouseNetworkError.fromError(error, endpoint);
+    }
+  }
+
   private async fetchWithRetry<T>(url: URL, path: string, attempts = 3): Promise<T> {
     let lastError: Error | undefined;
     for (let i = 0; i < attempts; i++) {
       try {
-        const response = await fetch(url.toString(), {
-          headers: {
-            Authorization: this.authHeader,
-            Accept: 'application/json',
+        const response = await this.fetchWithAuth(
+          url,
+          {
+            headers: {
+              Accept: 'application/json',
+            },
           },
-        });
+          path
+        );
 
         if (!response.ok) {
           const body = await response.text().catch(() => '');
@@ -115,7 +156,10 @@ export class APIClient {
         return (await response.json()) as T;
       } catch (err) {
         if (err instanceof CompaniesHouseAPIError) throw err;
-        lastError = err as Error;
+        lastError =
+          err instanceof CompaniesHouseNetworkError
+            ? err
+            : CompaniesHouseNetworkError.fromError(err, path);
         if (i < attempts - 1) {
           await this.sleep(Math.pow(2, i) * 500);
         }

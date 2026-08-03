@@ -29,9 +29,10 @@ const reportSchema = z.object(reportShape);
 
 registerTool({
   name: 'company_report',
+  title: 'Generate Company Report',
   description:
     'Generate a comprehensive company report in a single call. Returns: full profile, active officers, PSCs/ownership, outstanding charges, recent filings (last 10), and insolvency status. This is the recommended starting point for any company research — one tool call instead of six.',
-  inputSchema: reportShape,
+  inputSchema: reportSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const { company_number } = reportSchema.parse(params);
@@ -47,9 +48,10 @@ registerTool({
       ]);
 
       if (profile.status === 'rejected') {
-        return makeErrorResult(
-          `Could not fetch company profile: ${profile.reason?.message ?? 'Unknown error'}. Try search_companies to find the correct company number.`
-        );
+        return makeErrorResult(profile.reason, {
+          prefix: 'Could not fetch company profile:',
+          suffix: 'Try search_companies to find the correct company number.',
+        });
       }
 
       const sections: string[] = [];
@@ -117,7 +119,7 @@ registerTool({
 
       return makeTextResult(sections.join('\n'), structured);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
@@ -136,9 +138,10 @@ interface RedFlag {
 
 registerTool({
   name: 'due_diligence_check',
+  title: 'Run Due Diligence Check',
   description:
     'Run an automated due diligence red-flag scan on a UK company. Checks: company status (dissolved, liquidation, etc.), insolvency history, outstanding charges, overdue accounts, overdue confirmation statement, PSC warnings, and recently resigned officers. Returns a structured risk assessment with severity levels.',
-  inputSchema: ddShape,
+  inputSchema: ddSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const { company_number } = ddSchema.parse(params);
@@ -153,14 +156,24 @@ registerTool({
       ]);
 
       if (profile.status === 'rejected') {
-        return makeErrorResult(`Could not fetch company: ${profile.reason?.message}`);
+        return makeErrorResult(profile.reason, {
+          prefix: 'Could not fetch company:',
+        });
       }
 
       const p = profile.value;
       const flags: RedFlag[] = [];
 
       // Company status checks
-      if (['dissolved', 'liquidation', 'receivership', 'administration', 'insolvency-proceedings'].includes(p.company_status)) {
+      if (
+        [
+          'dissolved',
+          'liquidation',
+          'receivership',
+          'administration',
+          'insolvency-proceedings',
+        ].includes(p.company_status)
+      ) {
         flags.push({
           category: 'Company Status',
           severity: 'high',
@@ -304,7 +317,8 @@ registerTool({
       const medium = flags.filter(f => f.severity === 'medium');
       const low = flags.filter(f => f.severity === 'low');
 
-      const riskLevel = high.length > 0 ? 'HIGH' : medium.length > 0 ? 'MEDIUM' : low.length > 0 ? 'LOW' : 'CLEAR';
+      const riskLevel =
+        high.length > 0 ? 'HIGH' : medium.length > 0 ? 'MEDIUM' : low.length > 0 ? 'LOW' : 'CLEAR';
 
       const lines: string[] = [
         `## Due Diligence Report: ${p.company_name}`,
@@ -344,15 +358,21 @@ registerTool({
         flag_count: { high: high.length, medium: medium.length, low: low.length },
       });
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── officer_network ─────────────────────────────────────────────────────
 const networkShape = {
-  officer_id: z.string().optional().describe('Officer ID (from search_officers). Provide this OR officer_name.'),
-  officer_name: z.string().optional().describe('Officer name to search for. Provide this OR officer_id.'),
+  officer_id: z
+    .string()
+    .optional()
+    .describe('Officer ID (from search_officers). Provide this OR officer_name.'),
+  officer_name: z
+    .string()
+    .optional()
+    .describe('Officer name to search for. Provide this OR officer_id.'),
 };
 const networkSchema = z.object(networkShape).refine(data => data.officer_id || data.officer_name, {
   message: 'Provide either officer_id or officer_name',
@@ -360,9 +380,10 @@ const networkSchema = z.object(networkShape).refine(data => data.officer_id || d
 
 registerTool({
   name: 'officer_network',
+  title: 'Map Officer Network',
   description:
-    'Map an officer\'s network of company appointments. Given an officer ID or name, finds all their current and past directorships/appointments. Shows connected companies, their statuses, and roles held. Useful for investigating directors across multiple companies.',
-  inputSchema: networkShape,
+    "Map an officer's network of company appointments. Given an officer ID or name, finds all their current and past directorships/appointments. Shows connected companies, their statuses, and roles held. Useful for investigating directors across multiple companies.",
+  inputSchema: networkSchema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const input = networkSchema.parse(params);
@@ -398,7 +419,9 @@ registerTool({
         }
       }
 
-      const appointments = await getOfficerAppointments(client, officerId!, { items_per_page: 100 });
+      const appointments = await getOfficerAppointments(client, officerId!, {
+        items_per_page: 100,
+      });
 
       const active = (appointments.items ?? []).filter(a => !a.resigned_on);
       const resigned = (appointments.items ?? []).filter(a => a.resigned_on);
@@ -433,7 +456,7 @@ registerTool({
         appointments: appointments as unknown as Record<string, unknown>,
       });
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });

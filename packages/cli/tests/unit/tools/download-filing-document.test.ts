@@ -3,22 +3,15 @@ import { tmpdir } from 'node:os';
 import { APIClient } from '../../../src/api/client.js';
 import { getTool } from '../../../src/tools/registry.js';
 
-vi.mock('../../../src/config.js', () => ({
-  resolveApiKey: vi.fn(() => ({ key: 'test-api-key', source: 'env' })),
-}));
-
 vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(() => Promise.resolve()),
   mkdir: vi.fn(() => Promise.resolve()),
 }));
 
 import '../../../src/tools/download-filing-document.js';
-import { resolveApiKey } from '../../../src/config.js';
 import { writeFile, mkdir } from 'node:fs/promises';
 
-// Minimal client — download_filing_document doesn't use APIClient at all,
-// but execute() takes one as its first argument.
-const client = new APIClient({ api_key: 'test', cache_enabled: false });
+const client = new APIClient({ api_key: 'factory-supplied-key', cache_enabled: false });
 
 const FAKE_PDF = Buffer.from('%PDF-1.4 fake content');
 const S3_URL = 'https://s3.amazonaws.com/companies-house-documents/fake-signed-url';
@@ -85,7 +78,6 @@ describe('download_filing_document', () => {
     originalFetch = globalThis.fetch;
     originalEnv = process.env.COMPANIES_HOUSE_DOWNLOAD_DIR;
     delete process.env.COMPANIES_HOUSE_DOWNLOAD_DIR;
-    vi.mocked(resolveApiKey).mockReturnValue({ key: 'test-api-key', source: 'env' });
     vi.mocked(writeFile).mockResolvedValue(undefined);
     vi.mocked(mkdir).mockResolvedValue(undefined);
   });
@@ -118,7 +110,9 @@ describe('download_filing_document', () => {
     await tool.execute(client, { document_id: '/document/ABC123', return_as: 'base64' });
     const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
     // Should NOT double-encode /document/document/
-    expect(calls.some(u => u.endsWith('/document/ABC123') || u.endsWith('/document/ABC123/content'))).toBe(true);
+    expect(
+      calls.some(u => u.endsWith('/document/ABC123') || u.endsWith('/document/ABC123/content'))
+    ).toBe(true);
     expect(calls.every(u => !u.includes('/document/document/'))).toBe(true);
   });
 
@@ -168,9 +162,8 @@ describe('download_filing_document', () => {
     const s3Call = fetchCalls.find(([u]) => u === S3_URL);
     expect(s3Call).toBeDefined();
     const s3Init = s3Call![1];
-    const headers = s3Init?.headers as Record<string, string> | undefined;
-    expect(headers?.['Authorization']).toBeUndefined();
-    expect(headers?.['authorization']).toBeUndefined();
+    const headers = new Headers(s3Init?.headers);
+    expect(headers.get('Authorization')).toBeNull();
   });
 
   it('sends Authorization header to Document API', async () => {
@@ -181,8 +174,10 @@ describe('download_filing_document', () => {
     const fetchCalls = vi.mocked(globalThis.fetch).mock.calls as Array<[string, RequestInit?]>;
     const contentCall = fetchCalls.find(([u]) => (u as string).includes('/content'));
     expect(contentCall).toBeDefined();
-    const headers = contentCall![1]?.headers as Record<string, string> | undefined;
-    expect(headers?.['Authorization']).toMatch(/^Basic /);
+    const headers = new Headers(contentCall![1]?.headers);
+    expect(headers.get('Authorization')).toBe(
+      'Basic ' + Buffer.from('factory-supplied-key:').toString('base64')
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -275,15 +270,6 @@ describe('download_filing_document', () => {
     const result = await tool.execute(client, { document_id: 'DOC009', return_as: 'base64' });
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toContain('Error');
-  });
-
-  it('returns error result when API key is not configured', async () => {
-    vi.mocked(resolveApiKey).mockReturnValue(null);
-    globalThis.fetch = makeFetchMock();
-    const tool = getTool('download_filing_document')!;
-    const result = await tool.execute(client, { document_id: 'DOC010', return_as: 'base64' });
-    expect(result.isError).toBe(true);
-    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
   });
 
   it('returns error result when redirect has no Location header', async () => {

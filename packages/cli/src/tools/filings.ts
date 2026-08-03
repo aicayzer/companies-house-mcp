@@ -19,9 +19,10 @@ const schema = z.object(shape);
 
 registerTool({
   name: 'get_filings',
+  title: 'Get Filing History',
   description:
     'Get filing history for a UK company. Includes accounts, annual returns, officer changes, mortgage registrations, and all other filings. Use the category parameter to filter by type. Returns transaction IDs for retrieving specific documents.',
-  inputSchema: shape,
+  inputSchema: schema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const input = schema.parse(params);
@@ -36,7 +37,7 @@ registerTool({
         result as unknown as Record<string, unknown>
       );
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });

@@ -2,15 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { APIClient } from '../../src/api/client.js';
 import { getTool, getAllTools } from '../../src/tools/registry.js';
 
-// Import all tools to trigger registration
-import '../../src/tools/search.js';
-import '../../src/tools/company.js';
-import '../../src/tools/officers.js';
-import '../../src/tools/ownership.js';
-import '../../src/tools/filings.js';
-import '../../src/tools/financial.js';
-import '../../src/tools/extended.js';
-import '../../src/tools/composite.js';
+import '../../src/tools/all.js';
 
 const API_KEY = process.env.COMPANIES_HOUSE_API_KEY;
 
@@ -25,8 +17,8 @@ describeIntegration('Integration: Tools against real API', () => {
   });
 
   // Test companies
-  const TESCO = '00445790';        // Large PLC, many officers, charges
-  const ANTHROPIC = '13861484';    // Active tech company
+  const TESCO = '00445790'; // Large PLC, many officers, charges
+  const ANTHROPIC = '13861484'; // Active tech company
 
   it('search_companies finds Tesco', async () => {
     const tool = getTool('search_companies')!;

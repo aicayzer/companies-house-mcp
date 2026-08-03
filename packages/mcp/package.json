@@ -1,6 +1,6 @@
 {
   "name": "companies-house-mcp",
-  "version": "3.2.0",
+  "version": "4.0.0",
   "description": "MCP server for the UK Companies House API — connects Claude, Cursor, Zed, and other AI tools to live company data",
   "type": "module",
   "mcpName": "io.github.aicayzer/companies-house",
@@ -8,14 +8,14 @@
     "companies-house-mcp": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm run clean && tsc",
     "clean": "rm -rf dist/ *.tsbuildinfo",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
-    "prepublishOnly": "pnpm run clean && pnpm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "keywords": [
     "mcp",
@@ -42,16 +42,16 @@
     "url": "https://github.com/aicayzer/companies-house-mcp/issues"
   },
   "dependencies": {
-    "companies-house-cli": "workspace:^1.0.0"
+    "companies-house-cli": "workspace:^2.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.29",
-    "@typescript-eslint/eslint-plugin": "^8.33.1",
-    "@typescript-eslint/parser": "^8.33.1",
-    "eslint": "^9.28.0",
+    "@types/node": "^22.20.1",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/parser": "^8.66.0",
+    "eslint": "^9.39.5",
     "globals": "^14.0.0",
-    "prettier": "^3.5.3",
-    "typescript": "^5.8.3"
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3"
   },
   "files": [
     "dist/",

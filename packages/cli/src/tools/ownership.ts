@@ -13,9 +13,10 @@ const schema = z.object(shape);
 
 registerTool({
   name: 'get_ownership',
+  title: 'Get Company Ownership',
   description:
     'Get Persons with Significant Control (PSCs) for a UK company — the individuals or entities that own or control the company. Shows ownership percentages, voting rights, and right to appoint/remove directors. Covers individual PSCs, corporate PSCs, and legal person PSCs in a single consolidated view.',
-  inputSchema: shape,
+  inputSchema: schema,
   annotations: TOOL_ANNOTATIONS,
   async execute(client: APIClient, params: unknown) {
     const input = schema.parse(params);
@@ -29,7 +30,7 @@ registerTool({
         result as unknown as Record<string, unknown>
       );
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });

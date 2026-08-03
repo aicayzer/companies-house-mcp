@@ -39,6 +39,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Test packaged stdio entry points
+        run: pnpm test:package
+
       - name: Run unit tests
         run: pnpm test:unit
 

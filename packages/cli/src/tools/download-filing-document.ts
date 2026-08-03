@@ -33,19 +33,21 @@ import { randomUUID } from 'node:crypto';
 
 import {
   registerTool,
-  TOOL_ANNOTATIONS,
+  DOWNLOAD_TOOL_ANNOTATIONS,
   makeTextResult,
   makeErrorResult,
 } from './registry.js';
-import { resolveApiKey } from '../config.js';
-import type { APIClient } from '../api/client.js';
+import {
+  CompaniesHouseAPIError,
+  CompaniesHouseNetworkError,
+  type APIClient,
+} from '../api/client.js';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const DOCUMENT_API_BASE_URL =
-  'https://document-api.company-information.service.gov.uk';
+const DOCUMENT_API_BASE_URL = 'https://document-api.company-information.service.gov.uk';
 
 const DOWNLOAD_DIR_ENV_VAR = 'COMPANIES_HOUSE_DOWNLOAD_DIR';
 
@@ -79,7 +81,7 @@ const shape = {
     .describe(
       'The document id from a filing history item. Typically exposed on a ' +
         'filing as `links.document_metadata` (e.g. ".../document/ABC123"); ' +
-        'pass just the final path segment here.',
+        'pass just the final path segment here.'
     ),
   format: z
     .enum(['pdf', 'xhtml', 'xml', 'json'])
@@ -87,7 +89,7 @@ const shape = {
     .describe(
       'Preferred content type. Defaults to pdf. The Document API will ' +
         'return the requested format if available and otherwise fall back ' +
-        'to whatever it holds.',
+        'to whatever it holds.'
     ),
   return_as: z
     .enum(['file_path', 'base64'])
@@ -98,21 +100,21 @@ const shape = {
         'the MCP server runs on the same machine as the caller (stdio ' +
         'mode). "base64" returns the bytes inline as a base64 string in ' +
         'the response payload — required when the server is remote (HTTP) ' +
-        'and the caller has no access to the server filesystem.',
+        'and the caller has no access to the server filesystem.'
     ),
   company_number: z
     .string()
     .optional()
     .describe(
       'Optional — used only for the returned filename so you can tell ' +
-        'multiple downloads apart.',
+        'multiple downloads apart.'
     ),
   transaction_id: z
     .string()
     .optional()
     .describe(
       'Optional transaction id from the filing history item. Included in ' +
-        'the returned filename and response payload when supplied.',
+        'the returned filename and response payload when supplied.'
     ),
   save_dir: z
     .string()
@@ -122,7 +124,7 @@ const shape = {
         'mode only). Overrides the `COMPANIES_HOUSE_DOWNLOAD_DIR` env var ' +
         'and the OS temp directory default. The directory will be created ' +
         'if it does not already exist. Ignored when `return_as` is ' +
-        '"base64".',
+        '"base64".'
     ),
 };
 const schema = z.object(shape);
@@ -157,12 +159,6 @@ function resolveSaveDir(paramValue: string | undefined): {
   return { dir: tmpdir(), source: 'tmpdir' };
 }
 
-/** Build the HTTP Basic auth header the Document API expects (same scheme
- *  as the REST API — API key as username, empty password). */
-function buildAuthHeader(apiKey: string): string {
-  return 'Basic ' + Buffer.from(apiKey + ':').toString('base64');
-}
-
 interface FetchedDocument {
   buffer: Buffer;
   contentType: string;
@@ -172,22 +168,22 @@ interface FetchedDocument {
 async function fetchDocument(
   documentId: string,
   format: Format,
-  apiKey: string,
+  client: APIClient
 ): Promise<FetchedDocument> {
-  const auth = buildAuthHeader(apiKey);
   const accept = FORMAT_ACCEPT[format];
+  const documentEndpoint = `/document/${documentId}/content`;
 
   // ---- Step 1: metadata (optional but cheap and helpful for diagnostics).
   let metadata: Record<string, unknown> | null = null;
   try {
-    const metaRes = await fetch(
+    const metaRes = await client.fetchWithAuth(
       `${DOCUMENT_API_BASE_URL}/document/${encodeURIComponent(documentId)}`,
       {
         headers: {
-          Authorization: auth,
           Accept: 'application/json',
         },
       },
+      `/document/${documentId}`
     );
     if (metaRes.ok) {
       metadata = (await metaRes.json()) as Record<string, unknown>;
@@ -201,44 +197,46 @@ async function fetchDocument(
   //      signed S3 URL. We request redirect:'manual' so the auth header is
   //      NOT forwarded to S3 (which would reject it), then follow manually.
   const contentUrl =
-    `${DOCUMENT_API_BASE_URL}/document/` +
-    `${encodeURIComponent(documentId)}/content`;
+    `${DOCUMENT_API_BASE_URL}/document/` + `${encodeURIComponent(documentId)}/content`;
 
-  const firstRes = await fetch(contentUrl, {
-    method: 'GET',
-    redirect: 'manual',
-    headers: {
-      Authorization: auth,
-      Accept: accept,
+  const firstRes = await client.fetchWithAuth(
+    contentUrl,
+    {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { Accept: accept },
     },
-  });
+    documentEndpoint
+  );
 
   let finalRes: Response;
   if (firstRes.status >= 300 && firstRes.status < 400) {
     const location = firstRes.headers.get('location');
     if (!location) {
-      throw new Error(
-        `Document API returned ${firstRes.status} with no Location header`,
+      throw new CompaniesHouseAPIError(
+        `Document API returned ${firstRes.status} with no Location header.`,
+        firstRes.status,
+        documentEndpoint
       );
     }
     // Signed S3 URL — no auth header this time.
-    finalRes = await fetch(location, { method: 'GET' });
+    try {
+      finalRes = await fetch(location, { method: 'GET' });
+    } catch (error) {
+      throw CompaniesHouseNetworkError.fromError(error, documentEndpoint);
+    }
   } else {
     finalRes = firstRes;
   }
 
   if (!finalRes.ok) {
     const body = await safeReadText(finalRes);
-    throw new Error(
-      `Document content fetch failed: ${finalRes.status} ${finalRes.statusText}` +
-        (body ? ` — ${body.slice(0, 500)}` : ''),
-    );
+    throw CompaniesHouseAPIError.fromResponse(finalRes.status, documentEndpoint, body);
   }
 
   const arrayBuf = await finalRes.arrayBuffer();
   const buffer = Buffer.from(arrayBuf);
-  const contentType =
-    finalRes.headers.get('content-type') ?? accept ?? 'application/octet-stream';
+  const contentType = finalRes.headers.get('content-type') ?? accept ?? 'application/octet-stream';
 
   return { buffer, contentType, metadata };
 }
@@ -257,6 +255,7 @@ async function safeReadText(res: Response): Promise<string> {
 
 registerTool({
   name: 'download_filing_document',
+  title: 'Download Filing Document',
   description:
     'Download the actual filed document (PDF / XHTML / XML / JSON) for a ' +
     'Companies House filing history item via the Document API. By default ' +
@@ -265,25 +264,17 @@ registerTool({
     'MCP servers). Pair with `get_filings` — take the `links.' +
     'document_metadata` value from a filing and pass its final path ' +
     'segment as `document_id`.',
-  inputSchema: shape,
-  annotations: TOOL_ANNOTATIONS,
-  async execute(_client: APIClient, params: unknown) {
+  inputSchema: schema,
+  annotations: DOWNLOAD_TOOL_ANNOTATIONS,
+  async execute(client: APIClient, params: unknown) {
     const input = schema.parse(params);
     const documentId = normaliseDocumentId(input.document_id);
-
-    const resolved = resolveApiKey();
-    if (!resolved) {
-      return makeErrorResult(
-        'Companies House API key not configured. Set the COMPANIES_HOUSE_API_KEY environment variable or run `ch config` to store one.',
-      );
-    }
-    const apiKey = resolved.key;
 
     try {
       const { buffer, contentType, metadata } = await fetchDocument(
         documentId,
         input.format,
-        apiKey,
+        client
       );
 
       const commonPayload: Record<string, unknown> = {
@@ -291,12 +282,8 @@ registerTool({
         size_bytes: buffer.byteLength,
         document_id: documentId,
         requested_format: input.format,
-        ...(input.company_number
-          ? { company_number: input.company_number }
-          : {}),
-        ...(input.transaction_id
-          ? { transaction_id: input.transaction_id }
-          : {}),
+        ...(input.company_number ? { company_number: input.company_number } : {}),
+        ...(input.transaction_id ? { transaction_id: input.transaction_id } : {}),
         ...(metadata ? { metadata } : {}),
       };
 
@@ -320,21 +307,14 @@ registerTool({
       const ext = FORMAT_EXTENSION[input.format] ?? 'bin';
       const companyPart = input.company_number ? `${input.company_number}_` : '';
       const txnPart = input.transaction_id ? `${input.transaction_id}_` : '';
-      const filename = `${companyPart}${txnPart}${documentId}_${randomUUID().slice(
-        0,
-        8,
-      )}.${ext}`;
+      const filename = `${companyPart}${txnPart}${documentId}_${randomUUID().slice(0, 8)}.${ext}`;
 
-      const { dir: saveDir, source: saveDirSource } = resolveSaveDir(
-        input.save_dir,
-      );
+      const { dir: saveDir, source: saveDirSource } = resolveSaveDir(input.save_dir);
 
       try {
         await mkdir(saveDir, { recursive: true });
       } catch (err) {
-        return makeErrorResult(
-          `Could not create save directory '${saveDir}': ${(err as Error).message}`,
-        );
+        return makeErrorResult(err, { prefix: `Could not create save directory '${saveDir}':` });
       }
 
       const filePath = join(saveDir, filename);
@@ -355,7 +335,7 @@ registerTool({
 
       return makeTextResult(summary, payload);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
