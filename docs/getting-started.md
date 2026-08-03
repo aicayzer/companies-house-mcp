@@ -25,7 +25,7 @@ Full CLI reference in [CLI →](/cli).
 
 ## MCP server
 
-The MCP server connects AI assistants (Claude, Cursor, Zed) to live Companies House data.
+The MCP server connects AI assistants (Codex, Claude, Cursor, Zed) to 18 tools backed by your own Companies House API key. It supports legacy MCP clients alongside protocol version `2026-07-28`.
 
 The quickest setup — add this to your client's config:
 

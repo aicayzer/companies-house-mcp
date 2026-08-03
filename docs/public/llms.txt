@@ -1,15 +1,15 @@
 # Companies House CLI & MCP
 
-> UK Companies House API tools. CLI binary and MCP server for company search, profiles, officers, filings, charges, insolvency, ownership, and due diligence.
+> UK Companies House API tools. CLI binary and MCP server with 18 tools for company search, profiles, officers, filings, charges, insolvency, ownership, and due diligence.
 
 ## Packages
 
 - [companies-house-cli](https://www.npmjs.com/package/companies-house-cli): CLI binary (`ch`) for terminal access — install globally with `npm install -g companies-house-cli`
-- [companies-house-mcp](https://www.npmjs.com/package/companies-house-mcp): MCP server for Claude, Cursor, Zed, and other AI tools — run with `npx -y companies-house-mcp`
+- [companies-house-mcp](https://www.npmjs.com/package/companies-house-mcp): MCP server for Codex, Claude, Cursor, Zed, and other AI tools — run with `npx -y companies-house-mcp`
 
 ## API key
 
-Free key from https://developer.company-information.service.gov.uk/ — required by both packages.
+Bring your own free key from https://developer.company-information.service.gov.uk/ — required by both packages. The project does not provide a shared hosted API key.
 
 ## Tools
 
@@ -21,6 +21,7 @@ Free key from https://developer.company-information.service.gov.uk/ — required
 - get_ownership — persons with significant control (PSCs) and corporate ownership structure
 - get_filings — filing history with document metadata and download links
 - get_filing_document — retrieve a specific filing document by company number and transaction ID
+- download_filing_document — download a filed document as a local file or base64 content
 - get_charges — charges and mortgages registered against the company
 - get_insolvency — insolvency proceedings, liquidations, and administrations
 - get_company_registers — statutory registers (members, directors, secretaries, charges)
@@ -49,6 +50,13 @@ ch config set-key <key>
 ch config show
 ch serve
 ```
+
+## MCP transports
+
+- stdio — recommended for local clients
+- Streamable HTTP — local or controlled private use; binds to 127.0.0.1 by default and requires MCP_BEARER_TOKEN for non-loopback bindings
+- protocol compatibility — legacy MCP clients and protocol version 2026-07-28
+- public connectors — the server does not yet provide the hosted OAuth boundary required for a public Claude Custom Connector
 
 ## Source
 

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## companies-house-cli [2.0.0] / companies-house-mcp [4.0.0] — Unreleased
+
+### Added
+- **MCP SDK v2 foundation** — the server now uses the split `@modelcontextprotocol/server` and `@modelcontextprotocol/node` packages with Zod v4.
+- **Modern and legacy protocol support** — stdio and Streamable HTTP serve legacy MCP clients alongside protocol version `2026-07-28` from one tool implementation.
+- **Public server interfaces** — `companies-house-cli/mcp` exports `createCompaniesHouseMcpFactory()` and `companies-house-cli/server` exports the explicit `runServer()` entry point.
+- **Controlled HTTP binding** — `--host` defaults to `127.0.0.1`; non-loopback bindings require `MCP_BEARER_TOKEN`.
+
+### Changed
+- **Transport-neutral server** — the shared MCP factory owns the API client, cache, rate limiter, and all 18 tool registrations while transport runners create isolated server sessions.
+- **Dependency baseline** — updated build and test tooling within supported major versions and pinned the Node adapter's Hono peer to a patched release.
+- **Tool contracts** — all tools now have titles and complete Zod input schemas. `download_filing_document` is correctly marked as capable of writing to disk.
+- **Structured failures** — tool errors include safe structured metadata describing the failure kind, upstream status, endpoint, and retryability.
+- **Package identity** — the MCP wrapper and CLI server supply their own versions instead of reporting the CLI package version for both entry points.
+- **HTTP health response** — `/health` reports the 18-tool inventory and supported protocol families without exposing authentication state.
+- **Bring your own key** — active documentation consistently describes local or controlled private operation with each user supplying their own Companies House API key.
+
+### Removed
+- **Incomplete OAuth façade** — removed the custom OAuth discovery, authorisation, PKCE, and token endpoints. Deprecated `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, and `MCP_PUBLIC_URL` settings now produce migration guidance at startup.
+- **Wildcard CORS** — removed permissive browser CORS handling from the private HTTP transport.
+
+### Fixed
+- **Tool inventory drift** — server, CLI, tests, documentation, and bundled skills now use the same 18-tool registry.
+- **Rate-limit message** — an upstream `429` is reported as retryable instead of incorrectly claiming the request was queued.
+- **Factory credential consistency** — document metadata and content requests now use the API key supplied to the MCP factory.
+- **Loopback HTTP hardening** — local HTTP requests validate their `Host` and `Origin` headers to prevent DNS rebinding.
+- **Release ordering** — the wrapper package is no longer published when the CLI package publication fails.
+- **Clean release artefacts** — package builds now remove stale output before compiling, preventing removed server files from leaking into tarballs.
+
 ## companies-house-cli [1.2.0] / companies-house-mcp [3.2.0] — 2026-05-08
 
 ### Added

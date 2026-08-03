@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Companies House
   text: CLI and MCP
-  tagline: Free UK company data. No backend, no subscriptions, no middleman.
+  tagline: Free UK company data. No hosted backend, no subscriptions, no middleman.
   image:
     light: /uk-outline-light.png
     dark: /uk-outline-dark.png
@@ -26,7 +26,7 @@ features:
     details: The `ch` command. Search companies, pull reports, pipe to `jq`, or save as Markdown.
   - icon: '{}'
     title: MCP server
-    details: Connect Claude, Cursor, Zed, or any MCP client to live UK company data.
+    details: Connect Codex, Claude, Cursor, Zed, or any MCP client to 18 tools backed by your own API key.
   - icon: '?!'
     title: Due diligence
     details: Automated red-flag scan. Status, insolvency, charges, overdue filings — severity rated.

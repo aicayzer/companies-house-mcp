@@ -1,7 +1,7 @@
 # Companies House MCP v2
 
 ## Project Overview
-MCP server and CLI for the UK Companies House API. Provides 17 tools for company search, profiles, officers, filings, ownership, charges, insolvency, and composite operations (company reports, due diligence checks, officer network mapping).
+MCP server and CLI for the UK Companies House API. Provides 18 tools for company search, profiles, officers, filings, document downloads, ownership, charges, insolvency, and composite operations (company reports, due diligence checks, officer network mapping).
 
 ## Architecture
 - `src/api/` — HTTP client, rate limiter, cache, endpoint functions

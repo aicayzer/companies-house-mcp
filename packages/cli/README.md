@@ -38,7 +38,8 @@ ch search-officers <query>      Search for officers by name
 ch config set-key <key>         Save API key
 ch config show                  Show current key source
 ch serve                        Start MCP server (stdio)
-ch serve --http --port 3000     Start MCP server (HTTP)
+ch serve --http --host 127.0.0.1 --port 3000
+                                Start MCP server (local HTTP)
 ```
 
 Company numbers are 8-digit strings, zero-padded: `00445790`, `14604577`. Scottish companies use an `SC` prefix (`SC123456`).
@@ -79,7 +80,9 @@ Run `ch config show` to see which source is active.
 
 ## MCP server
 
-This package also ships an MCP server. Running `ch serve` starts it in stdio mode, which is how `companies-house-mcp` uses it internally. For AI assistant setup (Claude, Cursor, Zed), use the dedicated [`companies-house-mcp`](https://www.npmjs.com/package/companies-house-mcp) package — see [companies-house.uk/mcp](https://companies-house.uk/mcp).
+This package also ships an MCP server with 18 tools. Running `ch serve` starts it in stdio mode, which is how `companies-house-mcp` uses it internally. For AI assistant setup (Codex, Claude, Cursor, Zed), use the dedicated [`companies-house-mcp`](https://www.npmjs.com/package/companies-house-mcp) package — see [companies-house.uk/mcp](https://companies-house.uk/mcp).
+
+HTTP mode binds to `127.0.0.1` by default. Local loopback use can run without a bearer token; binding to any non-loopback address requires `MCP_BEARER_TOKEN`. This controlled HTTP mode does not provide the OAuth boundary required for a public Claude Custom Connector.
 
 ## Development
 

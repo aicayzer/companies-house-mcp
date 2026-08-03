@@ -42,6 +42,7 @@ You have access to the `companies-house` MCP server, which provides tools for qu
 | `get_uk_establishments` | UK branches of overseas companies. |
 | `get_officer_disqualifications` | Check if someone is disqualified from being a director. |
 | `get_filing_document` | Metadata for a specific filing (needs transaction ID from `get_filings`). |
+| `download_filing_document` | Download a filed document as a local file or return its bytes as base64. |
 
 ## Company Number Formats
 

@@ -20,17 +20,17 @@ pnpm test:unit                                          # no API key needed
 COMPANIES_HOUSE_API_KEY=your-key pnpm test:integration  # hits the live API
 ```
 
-Unit tests cover the API client, cache, rate limiter, tool registry, and formatters. Integration tests run all 17 tools against the real Companies House API.
+Unit tests cover the API client, cache, rate limiter, tool registry, MCP transports, and formatters. Integration tests exercise representative tools and empty-data behaviour against the real Companies House API.
 
 ## Project structure
 
 ```
 packages/
-  cli/   → companies-house-cli: all source code, CLI binary, MCP server, 17 tools
-  mcp/   → companies-house-mcp: thin wrapper that re-exports the CLI's server entry point
+  cli/   → companies-house-cli: API client, CLI, MCP factory and runner, 18 tools
+  mcp/   → companies-house-mcp: thin wrapper that starts the shared MCP server
 ```
 
-All meaningful code lives in `packages/cli/src/`. The MCP package (`packages/mcp/src/index.ts`) is three lines.
+All shared implementation lives in `packages/cli/src/`. The MCP package supplies its own package identity and starts the transport-neutral server exported by the CLI package.
 
 ## Making changes
 

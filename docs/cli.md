@@ -24,7 +24,8 @@ ch search-officers <query>      Search for officers by name
 ch config set-key <key>         Save API key to config file
 ch config show                  Show current key source
 ch serve                        Start MCP server (stdio)
-ch serve --http --port 3000     Start MCP server (HTTP)
+ch serve --http --host 127.0.0.1 --port 3000
+                                 Start MCP server (local HTTP)
 ```
 
 ## Flags
@@ -100,4 +101,6 @@ ch report 07670541 --md > brewdog-report.md
 
 ## MCP server
 
-This package also ships an MCP server. `ch serve` starts it in stdio mode. For AI assistant setup (Claude, Cursor, Zed), use [`companies-house-mcp`](https://www.npmjs.com/package/companies-house-mcp) — it handles all the wiring. See [MCP setup →](/mcp).
+This package also ships an MCP server. `ch serve` starts it in stdio mode. For AI assistant setup (Codex, Claude, Cursor, Zed), use [`companies-house-mcp`](https://www.npmjs.com/package/companies-house-mcp) — it handles all the wiring. See [MCP setup →](/mcp).
+
+HTTP binds to `127.0.0.1` by default. A bearer token is required if you deliberately bind to a non-loopback address.

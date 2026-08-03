@@ -4,9 +4,9 @@
 [![npm: companies-house-mcp](https://img.shields.io/npm/v/companies-house-mcp?label=companies-house-mcp&style=flat)](https://www.npmjs.com/package/companies-house-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](https://opensource.org/licenses/MIT)
 
-An unofficial CLI and MCP server for the [UK Companies House API](https://developer.company-information.service.gov.uk/). Look up any UK company, check its officers, trace ownership, dig into filings, run a due diligence scan — from your terminal, your scripts, or directly inside Claude, Cursor, or any other AI tool that speaks MCP.
+An unofficial CLI and MCP server for the [UK Companies House API](https://developer.company-information.service.gov.uk/). Look up any UK company, check its officers, trace ownership, dig into filings, run a due diligence scan — from your terminal, your scripts, or directly inside Codex, Claude, Cursor, or any other AI tool that speaks MCP.
 
-Everything runs on a free API key. No backend, no subscriptions, no middleman.
+Everything runs with your own free API key. No hosted backend, no subscriptions, no middleman.
 
 **Documentation:** [companies-house.uk](https://companies-house.uk)
 
@@ -19,13 +19,13 @@ npm install -g companies-house-cli
 ch config set-key your-key-here
 ```
 
-**MCP server** — for Claude, Cursor, Zed, and others:
+**MCP server** — for Codex, Claude, Cursor, Zed, and others:
 
 ```bash
 npx -y companies-house-mcp
 ```
 
-Both packages use the same free API key from [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/).
+Both packages use your own free API key from [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/). The MCP server provides 18 tools and supports legacy MCP clients alongside protocol version `2026-07-28`.
 
 ## What it can do
 
@@ -42,6 +42,7 @@ Both packages use the same free API key from [developer.company-information.serv
 **Filings and financials**
 - `get_filings` / `ch filings` — full filing history with document links, filterable by category
 - `get_filing_document` — retrieve an individual filing document
+- `download_filing_document` — download a filed document as a local file or base64 content
 - `get_charges` / `ch charges` — charges and mortgages registered against the company
 - `get_insolvency` / `ch insolvency` — insolvency proceedings, liquidations, administrations
 
@@ -76,7 +77,9 @@ Full reference, flags, and output modes at [companies-house.uk/cli](https://comp
 
 ## MCP setup
 
-Add to your client config with your API key and run `npx -y companies-house-mcp`. Detailed setup for Claude Desktop, Claude Code, Cursor, and Zed at [companies-house.uk/mcp](https://companies-house.uk/mcp).
+Add to your client config with your API key and run `npx -y companies-house-mcp`. Detailed setup for Codex, Claude Desktop, Claude Code, Cursor, and Zed at [companies-house.uk/mcp](https://companies-house.uk/mcp).
+
+The server also offers Streamable HTTP for local or controlled private deployments. HTTP uses bearer-token authentication when exposed beyond the local machine; it is not yet a public Claude Custom Connector with hosted OAuth.
 
 ## Development
 

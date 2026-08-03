@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](https://opensource.org/licenses/MIT)
 [![Node 22+](https://img.shields.io/node/v/companies-house-mcp?style=flat)](https://nodejs.org/)
 
-MCP server for the [UK Companies House API](https://developer.company-information.service.gov.uk/). Connects Claude, Cursor, Zed, and other AI tools to live UK company data — 17 tools for search, profiles, officers, filings, ownership, charges, insolvency, and due diligence.
+MCP server for the [UK Companies House API](https://developer.company-information.service.gov.uk/). Connects Codex, Claude, Cursor, Zed, and other AI tools to live UK company data — 18 tools for search, profiles, officers, filings, ownership, charges, insolvency, and due diligence.
 
 From v3.0.0 this package is a thin wrapper over [`companies-house-cli`](https://www.npmjs.com/package/companies-house-cli). Existing `npx -y companies-house-mcp` configs work unchanged.
 
@@ -14,6 +14,8 @@ From v3.0.0 this package is a thin wrapper over [`companies-house-cli`](https://
 ## Get an API key
 
 Register at [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) — free, takes about 30 seconds.
+
+The server uses your API key directly. It does not route requests through a shared hosted backend.
 
 ## Setup
 
@@ -62,6 +64,17 @@ Or add to `~/.claude.json` manually:
 </details>
 
 <details>
+<summary>Codex</summary>
+
+```bash
+codex mcp add \
+  --env COMPANIES_HOUSE_API_KEY=your-key-here \
+  companies-house -- npx -y companies-house-mcp
+```
+
+</details>
+
+<details>
 <summary>Cursor</summary>
 
 Add to `~/.cursor/mcp.json`:
@@ -104,6 +117,19 @@ Add to `~/.config/zed/settings.json`:
 
 </details>
 
+## HTTP mode
+
+Stdio is the default and recommended client setup. For local or controlled private HTTP use:
+
+```bash
+COMPANIES_HOUSE_API_KEY=your-key \
+npx -y companies-house-mcp --http
+```
+
+HTTP binds to `127.0.0.1` by default. Local loopback use can run without authentication. To bind to another address, pass `--host` and set `MCP_BEARER_TOKEN`; the server refuses a non-loopback binding without a token.
+
+This HTTP mode supports legacy MCP clients alongside protocol version `2026-07-28`. It does not implement the hosted OAuth boundary required for a public Claude Custom Connector.
+
 ## Tools
 
 **Search**
@@ -117,6 +143,7 @@ Add to `~/.config/zed/settings.json`:
 - `get_ownership` — persons with significant control (PSCs) and corporate ownership
 - `get_filings` — filing history with document metadata and download links
 - `get_filing_document` — retrieve a specific filing document
+- `download_filing_document` — download a filed document as a local file or base64 content
 - `get_charges` — charges and mortgages registered against the company
 - `get_insolvency` — insolvency proceedings, liquidations, and administrations
 - `get_company_registers` — statutory registers (members, directors, secretaries)

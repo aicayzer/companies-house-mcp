@@ -47,6 +47,18 @@ Or add to `~/.claude.json` manually:
 }
 ```
 
+## Codex
+
+Register the stdio server with the Codex CLI:
+
+```bash
+codex mcp add \
+  --env COMPANIES_HOUSE_API_KEY=your-key-here \
+  companies-house -- npx -y companies-house-mcp
+```
+
+Confirm the registration with `codex mcp get companies-house`.
+
 ## Cursor
 
 Add to `~/.cursor/mcp.json`:
@@ -86,74 +98,45 @@ Add to `~/.config/zed/settings.json`:
 
 ## HTTP mode
 
-The server can run as a Streamable HTTP server instead of stdio. This is useful when you want to share a single server instance across multiple clients, expose it over a network, or connect Claude Desktop via its Custom Connector UI.
+The server can run as Streamable HTTP instead of stdio for local development or a controlled private deployment. It supports legacy MCP clients alongside protocol version `2026-07-28`.
 
-Start with `--http` (default port 3000):
+Start on the default loopback address and port (`127.0.0.1:3000`):
 
 ```bash
 COMPANIES_HOUSE_API_KEY=your-key \
-MCP_BEARER_TOKEN=a-secret-token \
 npx companies-house-mcp --http
 ```
 
-Or with a custom port:
+Or choose a host and port explicitly. A non-loopback binding requires a bearer token:
 
 ```bash
-npx companies-house-mcp --http --port 8080
+COMPANIES_HOUSE_API_KEY=your-key \
+MCP_BEARER_TOKEN=a-long-random-token \
+npx companies-house-mcp --http --host 0.0.0.0 --port 8080
 ```
 
-Three endpoints are available in HTTP mode:
+Two endpoints are available:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `POST /mcp` | MCP protocol — send tool calls here |
-| `GET /health` | Health check, returns tool count and OAuth status |
-| `GET /.well-known/oauth-authorization-server` | OAuth discovery metadata (when OAuth is enabled) |
+| `/mcp` | MCP protocol requests |
+| `GET /health` | Unauthenticated health check with tool count and supported protocol families |
 
 ### Authentication and environment variables
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `COMPANIES_HOUSE_API_KEY` | Yes | API key from developer.company-information.service.gov.uk |
-| `MCP_BEARER_TOKEN` | Recommended in HTTP mode | Bearer token required on all `/mcp` requests. Log a warning at startup if unset |
-| `MCP_OAUTH_CLIENT_ID` | Optional | Enables OAuth — must be set together with `MCP_OAUTH_CLIENT_SECRET` |
-| `MCP_OAUTH_CLIENT_SECRET` | Optional | Paired with `MCP_OAUTH_CLIENT_ID` |
-| `MCP_PUBLIC_URL` | Optional | Override the issuer URL in OAuth discovery (required when behind a tunnel or reverse proxy) |
+| `COMPANIES_HOUSE_API_KEY` | Yes | Your own API key from developer.company-information.service.gov.uk |
+| `MCP_BEARER_TOKEN` | Non-loopback HTTP only | Bearer token required on `/mcp`; loopback-only HTTP can run without one |
 | `COMPANIES_HOUSE_DOWNLOAD_DIR` | Optional | Default save directory for `download_filing_document` in `file_path` mode |
 
-### Connecting Claude Desktop via Custom Connector
+Bearer authentication is intended for a server you control. Put TLS and any wider network access controls in front of it. The server refuses a non-loopback binding without `MCP_BEARER_TOKEN`.
 
-Claude Desktop's Custom Connector UI uses an `authorization_code + PKCE` OAuth flow. The server handles the full flow when OAuth env vars are set.
+The previous custom OAuth environment variables and endpoints have been removed. If `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, or `MCP_PUBLIC_URL` is set, startup fails with migration guidance rather than silently using an unsafe authentication boundary.
 
-**Requirements:** the server must be publicly reachable — claude.ai's backend makes a back-channel request to `/oauth/token` to exchange the code for a token. Use a tunnel (e.g. Cloudflare Tunnel) for local testing.
+### Public Claude Custom Connectors
 
-**Setup:**
-
-1. Choose a `client_id` and `client_secret` (any strings you control):
-   ```bash
-   export MCP_OAUTH_CLIENT_ID=my-connector
-   export MCP_OAUTH_CLIENT_SECRET=a-long-random-secret
-   export MCP_BEARER_TOKEN=a-long-random-token
-   export MCP_PUBLIC_URL=https://your-tunnel-url.example.com
-   ```
-
-2. Start the server:
-   ```bash
-   COMPANIES_HOUSE_API_KEY=your-key npx companies-house-mcp --http
-   ```
-
-3. Expose via tunnel:
-   ```bash
-   cloudflared tunnel --url http://localhost:3000
-   ```
-
-4. In Claude Desktop: **Settings → Integrations → Add Custom Connector**, enter `https://your-tunnel-url.example.com/mcp`.
-
-5. Complete the browser auth flow. Claude Desktop will redirect to `/oauth/authorize`, which immediately redirects back with an auth code (no login UI — the correct `client_id` is sufficient for this single-user server). The token exchange happens in the background.
-
-6. Ask Claude Desktop to call a tool (e.g. "Search for Tesco on Companies House") to confirm it's working.
-
-**Discovering the client_id:** if you're unsure what `client_id` Claude Desktop will send, start the server with any value, watch the logs for the incoming request to `/oauth/authorize`, and update `MCP_OAUTH_CLIENT_ID` to match.
+This release is not a public Claude Custom Connector deployment. Public connectors require a real hosted OAuth boundary with user authorisation and consent; a bearer token on a privately controlled server is not a substitute. A supported self-hosted deployment and authentication path is planned separately.
 
 ## What to ask
 
