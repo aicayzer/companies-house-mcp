@@ -24,25 +24,29 @@ export class CompaniesHouseAPIError extends Error {
     retryAfterSeconds?: number
   ): CompaniesHouseAPIError {
     const messages: Record<number, string> = {
-      400: 'Bad request — check your parameters.',
-      401: 'Invalid API key. Check your COMPANIES_HOUSE_API_KEY.',
-      403: 'Access forbidden. Your API key may not have access to this endpoint.',
-      404: 'Not found. Check the company number or officer ID.',
+      400: 'Companies House rejected the request as malformed.',
+      401: 'Companies House rejected the API key.',
+      403: 'Companies House refused access. This key may not be entitled to this resource.',
+      404: 'Companies House holds no such record.',
       429: 'Companies House rate limit reached.',
-      500: 'Companies House API internal error. Try again later.',
-      502: 'Companies House API is temporarily unavailable.',
-      503: 'Companies House API is temporarily unavailable.',
+      500: 'Companies House had an internal error. Try again shortly.',
+      502: 'Companies House is temporarily unavailable.',
+      503: 'Companies House is temporarily unavailable.',
     };
-    let msg = messages[status] ?? `API returned status ${status}`;
+    let msg = messages[status] ?? `Companies House returned status ${status}.`;
     if (status === 429) {
       msg +=
         retryAfterSeconds !== undefined
           ? ` Retry in about ${retryAfterSeconds} second(s).`
           : ' Try again shortly.';
     }
-    // Companies House error bodies are small JSON documents. Truncate defensively
-    // so a large or unexpected body can never dominate a tool response.
-    const detail = body ? ` Response: ${body.slice(0, 200)}` : '';
+
+    // The upstream body only adds information when the message above cannot
+    // explain the failure on its own. For a rejected key, a missing record or
+    // a rate limit it is noise, and a 404 body in particular carries a
+    // timestamp and request id that help nobody reading the result.
+    const bodyIsUseful = status === 400 || status >= 500;
+    const detail = bodyIsUseful && body ? ` Companies House said: ${body.slice(0, 200)}` : '';
     return new CompaniesHouseAPIError(`${msg}${detail}`, status, endpoint, retryAfterSeconds);
   }
 }

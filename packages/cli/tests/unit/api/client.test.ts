@@ -64,7 +64,7 @@ describe('APIClient', () => {
     }) as typeof fetch;
 
     const client = new APIClient({ api_key: 'bad-key', cache_enabled: false });
-    await expect(client.get('/test')).rejects.toThrow('Invalid API key');
+    await expect(client.get('/test')).rejects.toThrow('rejected the API key');
   });
 
   it('uses cache when enabled', async () => {
@@ -133,7 +133,17 @@ describe('CompaniesHouseAPIError', () => {
     const error = CompaniesHouseAPIError.fromResponse(404, '/company/test');
     expect(error.statusCode).toBe(404);
     expect(error.endpoint).toBe('/company/test');
-    expect(error.message).toContain('Not found');
+    expect(error.message).toContain('no such record');
+  });
+
+  it('keeps the upstream body only where it explains something', () => {
+    // A 404 body is a timestamp and a request id; a 400 body says what was
+    // wrong with the request.
+    const notFound = CompaniesHouseAPIError.fromResponse(404, '/x', '{"timestamp":"...","message":"..."}');
+    expect(notFound.message).not.toContain('timestamp');
+
+    const badRequest = CompaniesHouseAPIError.fromResponse(400, '/x', '{"error":"invalid start_index"}');
+    expect(badRequest.message).toContain('invalid start_index');
   });
 
   it('describes upstream rate limits without claiming the request is queued', () => {
@@ -150,8 +160,13 @@ describe('CompaniesHouseAPIError', () => {
     expect(error.message).toContain('Retry in about 12 second(s)');
   });
 
-  it('includes response body in error', () => {
+  it('includes the response body for a malformed request', () => {
     const error = CompaniesHouseAPIError.fromResponse(400, '/test', '{"error":"bad"}');
     expect(error.message).toContain('bad');
+  });
+
+  it('never lets a large upstream body dominate the message', () => {
+    const error = CompaniesHouseAPIError.fromResponse(500, '/test', 'x'.repeat(5000));
+    expect(error.message.length).toBeLessThan(400);
   });
 });

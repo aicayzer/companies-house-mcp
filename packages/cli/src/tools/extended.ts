@@ -269,7 +269,7 @@ registerTool({
       if (isNotFound(err)) {
         return makeErrorResult(err, {
           prefix: 'No filing matches that transaction id.',
-          suffix: 'Use get_filings to list valid transaction ids for this company.',
+          notFoundSuffix: 'Use get_filings to list valid transaction ids for this company.',
         });
       }
       return makeErrorResult(err);

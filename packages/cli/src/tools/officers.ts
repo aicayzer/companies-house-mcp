@@ -194,7 +194,7 @@ registerTool({
       return makeTextResult(text, result as unknown as Record<string, unknown>);
     } catch (err) {
       return makeErrorResult(err, {
-        suffix: 'Use search_officers to confirm the officer id.',
+        notFoundSuffix: 'Use search_officers to confirm the officer id.',
       });
     }
   },

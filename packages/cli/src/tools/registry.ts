@@ -89,7 +89,14 @@ export interface StructuredToolError {
 
 interface ErrorResultOptions {
   prefix?: string;
+  /** Appended to every error. Use only for advice that always applies. */
   suffix?: string;
+  /**
+   * Appended only when Companies House said the resource does not exist.
+   * "Check the company number" is unhelpful advice for a rejected credential
+   * or a rate limit, so identifier guidance belongs here.
+   */
+  notFoundSuffix?: string;
 }
 
 const tools = new Map<string, ToolDefinition>();
@@ -199,7 +206,12 @@ export function makeResourceResult(
 
 export function makeErrorResult(error: unknown, options: ErrorResultOptions = {}): ToolResult {
   const details = classifyError(error);
-  const message = [options.prefix, details.message, options.suffix]
+  const message = [
+    options.prefix,
+    details.message,
+    options.suffix,
+    isNotFound(error) ? options.notFoundSuffix : undefined,
+  ]
     .filter((part): part is string => Boolean(part))
     .join(' ');
   const structuredError: StructuredToolError = { ...details, message };

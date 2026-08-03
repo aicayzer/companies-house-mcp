@@ -30,7 +30,7 @@ ch report 00445790
 
 Full reference: [companies-house.uk/cli](https://companies-house.uk/cli).
 
-**On your own server** — an optional Cloudflare Worker you deploy into your own account, so Claude Code can reach it remotely. See [packages/worker](./packages/worker/README.md).
+**On your own server** — an optional Cloudflare Worker you deploy into your own account, so Claude Code can reach it remotely. See [companies-house.uk/self-hosting](https://companies-house.uk/self-hosting), or the [deployment guide](./packages/worker/README.md).
 
 Get a free API key at [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/). It takes about a minute.
 

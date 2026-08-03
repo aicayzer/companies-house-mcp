@@ -45,6 +45,7 @@ export default defineConfig({
         items: [
           { text: 'Setup', link: '/mcp' },
           { text: 'Tools reference', link: '/tools' },
+          { text: 'Self-hosting', link: '/self-hosting' },
         ],
       },
     ],

@@ -145,7 +145,7 @@ The removed custom OAuth variables — `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_
 
 ## Remote servers
 
-You can deploy your own remote server as a Cloudflare Worker in your own account, with your own API key and your own bearer token. See the [Worker guide](https://github.com/aicayzer/companies-house-mcp/tree/main/packages/worker).
+You can deploy your own remote server as a Cloudflare Worker in your own account, with your own API key and your own bearer token. See [self-hosting](/self-hosting).
 
 **Claude Code, Cursor and VS Code support this**, because they send a static bearer token on every request.
 

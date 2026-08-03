@@ -41,7 +41,7 @@ The [CLI reference](/cli) has every command.
 
 ### On your own server
 
-If you want a remote MCP server that Claude Code can reach from anywhere, deploy the Cloudflare Worker into your own account. It uses your key and a bearer token you choose. See the [Worker guide](https://github.com/aicayzer/companies-house-mcp/tree/main/packages/worker).
+If you want a remote MCP server that Claude Code can reach from anywhere, deploy the Cloudflare Worker into your own account. It uses your key and a bearer token you choose. See [self-hosting](/self-hosting).
 
 ## 3. Know what you are reading
 

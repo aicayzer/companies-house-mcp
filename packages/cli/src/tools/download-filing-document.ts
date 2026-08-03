@@ -269,7 +269,7 @@ registerTool({
       return makeResourceResult(summaryParts.join(' '), resource, payload);
     } catch (err) {
       return makeErrorResult(err, {
-        suffix: 'Use get_filings to confirm the document id for this filing.',
+        notFoundSuffix: 'Use get_filings to confirm the document id for this filing.',
       });
     }
   },

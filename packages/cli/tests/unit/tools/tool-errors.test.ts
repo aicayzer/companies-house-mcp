@@ -119,6 +119,25 @@ describe('Tool execution errors', () => {
     expect(result.structuredContent).toMatchObject(structured);
   });
 
+  it('only gives identifier advice when the record was genuinely not found', async () => {
+    const notFound = await getTool('get_company_profile')!.execute(
+      createRejectingClient(new CompaniesHouseAPIError('No such record.', 404, '/company/1')),
+      { company_number: '12345678' }
+    );
+    expect(textOf(notFound)).toContain('search_companies');
+
+    // "Check the company number" is misleading when the key was rejected.
+    for (const status of [401, 403, 429, 500]) {
+      const other = await getTool('get_company_profile')!.execute(
+        createRejectingClient(new CompaniesHouseAPIError('Upstream said no.', status, '/company/1')),
+        { company_number: '12345678' }
+      );
+      expect(textOf(other), `status ${status} should not suggest checking the number`).not.toContain(
+        'search_companies'
+      );
+    }
+  });
+
   it('surfaces the wait Companies House asked for after a rate limit', async () => {
     const result = await getTool('get_company_profile')!.execute(
       createRejectingClient(

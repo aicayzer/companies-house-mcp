@@ -28,7 +28,7 @@ registerTool({
       );
     } catch (err) {
       return makeErrorResult(err, {
-        suffix: 'Use search_companies to find the correct company number.',
+        notFoundSuffix: 'Use search_companies to find the correct company number.',
       });
     }
   },

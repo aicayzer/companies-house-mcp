@@ -17,8 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Full CLI coverage** — every MCP tool now has a `ch` command, including `appointments`, `filing`, `document`, `registers`, `exemptions`, `establishments` and `disqualifications`. `ch tools` lists the registry, `ch --version` reports the version, and `ch <command> --help` is generated from the tool's own schema.
 - **Optional Cloudflare Worker** — `packages/worker` is a single-user Worker that serves the same MCP server over Streamable HTTP with a bearer token, deployed by the user into their own account.
 - **Generated documentation** — `docs/tools.md` and `docs/public/llms.txt` are generated from the tool registry, and a test fails when the prose documentation drifts from the tools.
-
-### Added (Wave 1)
 - **MCP SDK v2 foundation** — the server now uses the split `@modelcontextprotocol/server` and `@modelcontextprotocol/node` packages with Zod v4.
 - **Modern and legacy protocol support** — stdio and Streamable HTTP serve legacy MCP clients alongside protocol version `2026-07-28` from one tool implementation.
 - **Public server interfaces** — `companies-house-cli/mcp` exports `createCompaniesHouseMcpFactory()` and `companies-house-cli/server` exports the explicit `runServer()` entry point.
