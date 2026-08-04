@@ -145,6 +145,38 @@ describe('explainAbsentPSCs', () => {
     expect(result.active_statements).toHaveLength(0);
   });
 
+  it('treats an unreadable end date as ended rather than in force', async () => {
+    const result = await explainAbsentPSCs(
+      clientFor({
+        exemptions: {
+          psc_exempt_as_trading_on_uk_regulated_market: {
+            exemption_type: 'psc-exempt-as-trading-on-uk-regulated-market',
+            items: [{ exempt_from: '2018-06-18', exempt_to: 'not-a-date' }],
+          },
+        },
+      }),
+      '1',
+      NOW
+    );
+    expect(result.exempt).toBe(false);
+  });
+
+  it('keeps an exemption in force through the whole of its final day', async () => {
+    const result = await explainAbsentPSCs(
+      clientFor({
+        exemptions: {
+          psc_exempt_as_trading_on_uk_regulated_market: {
+            exemption_type: 'psc-exempt-as-trading-on-uk-regulated-market',
+            items: [{ exempt_from: '2018-06-18', exempt_to: '2026-08-04' }],
+          },
+        },
+      }),
+      '1',
+      new Date('2026-08-04T12:00:00Z')
+    );
+    expect(result.exempt).toBe(true);
+  });
+
   it('copes when the exemptions and statements records do not exist', async () => {
     const result = await explainAbsentPSCs(
       clientFor({ exemptionsFail: true, statementsFail: true }),
@@ -193,6 +225,22 @@ describe('describeAbsentPSCs', () => {
     const narrative = await narrate({ exemptions: EXPIRED_UK_EXEMPTION });
     expect(narrative.unexplained).toBe(true);
     expect(narrative.coverageNote).toContain('exemption ended');
+  });
+
+  it('does not deny a statement the payload carries', async () => {
+    // Expired exemption plus a withdrawn statement: the text must not say
+    // "no statement has been filed" while psc_statements holds one.
+    const narrative = await narrate({
+      exemptions: EXPIRED_UK_EXEMPTION,
+      statements: [
+        { statement: 'no-individual-or-entity-with-signficant-control', ceased_on: '2024-01-01' },
+      ],
+    });
+    const text = narrative.lines.join('\n');
+
+    expect(text).not.toContain('No statement has been filed');
+    expect(text).toContain('has since been withdrawn');
+    expect(narrative.unexplained).toBe(true);
   });
 
   it('flags an entirely empty register as unexplained', async () => {

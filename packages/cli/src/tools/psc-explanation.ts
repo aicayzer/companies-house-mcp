@@ -36,8 +36,8 @@ export function describeAbsentPSCs(explanation: PSCExplanation): AbsentPSCNarrat
         ''
       );
     }
-    if (explanation.active_statements.length) {
-      lines.push(...formatPSCStatements(explanation.active_statements));
+    if (explanation.statements.length) {
+      lines.push(...formatPSCStatements(explanation.statements));
     }
     return { lines, coverageNote: 'company is exempt', unexplained: false };
   }
@@ -65,6 +65,21 @@ export function describeAbsentPSCs(explanation: PSCExplanation): AbsentPSCNarrat
         unexplained: false,
       };
     }
+    if (explanation.statements.length) {
+      // There *is* a statement in the payload; saying none was filed would
+      // contradict the JSON in the same response.
+      lines.push(
+        'A statement was filed in place of an entry but has since been withdrawn, so ownership cannot be established from the register.',
+        ''
+      );
+      lines.push(...formatPSCStatements(explanation.statements));
+      return {
+        lines,
+        coverageNote: 'exemption ended; the filed statement was withdrawn',
+        unexplained: true,
+      };
+    }
+
     lines.push(
       'No statement has been filed in place of an entry either, so ownership cannot be established from the register.',
       ''

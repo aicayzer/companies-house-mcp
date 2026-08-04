@@ -26,6 +26,31 @@ import {
 import type { APIClient } from '../api/client.js';
 import type { CompanyOfficer, OfficersList } from '../types/index.js';
 
+/**
+ * Companies House answers an offset past the end of a list with an empty page
+ * *and* zeroed counts. Reporting those counts asserts "0 on the register"
+ * about a company that may have hundreds of officers, so both branches of
+ * `get_officers` bail out here instead.
+ */
+function pagedPastEnd(returned: number, startIndex: number): boolean {
+  return returned === 0 && startIndex > 0;
+}
+
+function pastEndResult(startIndex: number, list: OfficersList | undefined) {
+  // The zeroed counts are an artefact of the offset, not facts about the
+  // company, so they are not passed through to the structured payload either.
+  return makeTextResult(emptyPageText('officers', startIndex), {
+    items: [],
+    returned_count: 0,
+    start_index: startIndex,
+    ...(list?.links ? { links: list.links } : {}),
+    coverage: {
+      complete: false,
+      reason: 'start_index is past the end of the list',
+    },
+  });
+}
+
 // ── get_officers ────────────────────────────────────────────────────────
 const getOfficersShape = {
   company_number: companyNumberSchema,
@@ -62,22 +87,18 @@ registerTool({
           order_by: input.order_by,
         });
         const items = result.items ?? [];
-        // Companies House reports zeroed counts for an offset past the end of
-        // the list. Printing them would assert "0 on the register" about a
-        // company that may have hundreds of officers.
-        const pagedPastEnd = items.length === 0 && input.start_index > 0;
+        if (pagedPastEnd(items.length, input.start_index)) {
+          return pastEndResult(input.start_index, result);
+        }
+
         const text = [
-          pagedPastEnd
-            ? emptyPageText('officers', input.start_index, result.total_results || undefined)
-            : [
-                formatOfficerCounts({
-                  total: result.total_results,
-                  active: result.active_count,
-                  resigned: result.resigned_count,
-                }),
-                '',
-                formatOfficers(items, result.total_results ?? items.length),
-              ].join('\n'),
+          formatOfficerCounts({
+            total: result.total_results,
+            active: result.active_count,
+            resigned: result.resigned_count,
+          }),
+          '',
+          formatOfficers(items, result.total_results ?? items.length),
           formatPagination({
             start_index: input.start_index,
             items_per_page: input.items_per_page,
@@ -119,10 +140,19 @@ registerTool({
         }
       );
 
+      if (pagedPastEnd(collected.items.length, input.start_index)) {
+        return pastEndResult(input.start_index, listMeta);
+      }
+
       const active = collected.items.filter(officer => !officer.resigned_on);
       const expectedActive = listMeta?.active_count;
       const foundAll = expectedActive === undefined || active.length >= expectedActive;
 
+      // Why collection stopped decides what advice helps. Paging further only
+      // helps when the page budget ran out; if the list was exhausted, the
+      // remaining active officers are at *lower* offsets, and telling the
+      // caller to raise start_index sends them the wrong way.
+      const ranOutOfBudget = collected.stoppedBecause === 'page-budget';
       const coverage: CoverageEntry[] = [
         {
           resource: 'Officers',
@@ -131,7 +161,9 @@ registerTool({
           total: collected.total,
           note: foundAll
             ? undefined
-            : `stopped after ${collected.pagesFetched} page(s); ${active.length} of ${expectedActive} active officers found. Raise start_index to continue, or set include_resigned to page through the full list.`,
+            : ranOutOfBudget
+              ? `stopped after ${collected.pagesFetched} page(s) because the page budget ran out; ${active.length} of ${expectedActive} officers in post found. Continue with start_index: ${input.start_index + collected.items.length}, or use include_resigned to page through the full list.`
+              : `read the list from offset ${input.start_index} to its end and found ${active.length} of ${expectedActive} officers in post; the rest are at a lower offset. Call again with start_index: 0.`,
         },
       ];
 
@@ -142,7 +174,9 @@ registerTool({
           resigned: listMeta?.resigned_count,
         }),
         '',
-        formatOfficers(active, active.length),
+        active.length
+          ? formatOfficers(active, active.length)
+          : `None of the ${collected.items.length} officer record(s) read are currently in post.`,
         ...(foundAll ? [] : coverageLines(coverage)),
       ]
         .filter(Boolean)

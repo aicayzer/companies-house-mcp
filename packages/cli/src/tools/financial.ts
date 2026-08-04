@@ -46,8 +46,10 @@ registerTool({
       const counts = chargeCounts(result);
 
       const text = [
-        formatChargeCounts(counts),
-        '',
+        // The counts line already states the register total, so an out-of-range
+        // page would otherwise say the same number twice in adjacent lines.
+        items.length || input.start_index === 0 ? formatChargeCounts(counts) : '',
+        items.length || input.start_index === 0 ? '' : undefined,
         items.length
           ? formatCharges(items, counts.total)
           : emptyPageText('charges', input.start_index, counts.total),

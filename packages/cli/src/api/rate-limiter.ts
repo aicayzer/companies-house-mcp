@@ -35,6 +35,38 @@ export class RateLimiter {
     }
   }
 
+  /**
+   * Align the local window to the server's, using the reset time Companies
+   * House reports.
+   *
+   * Without this the local window starts whenever the process did, so its
+   * boundary sits somewhere inside the server's — and a burst straddling the
+   * local boundary spends two local allowances inside one server window,
+   * which is the very thing a fixed window is meant to prevent.
+   *
+   * @param resetAtSeconds unix epoch seconds from `X-Ratelimit-Reset`
+   * @param remaining      requests the server says are left in this window
+   */
+  observeServerWindow(resetAtSeconds: number | undefined, remaining: number | undefined): void {
+    if (resetAtSeconds === undefined || !Number.isFinite(resetAtSeconds)) return;
+
+    const serverWindowStart = resetAtSeconds * 1000 - this.windowMs;
+    const now = Date.now();
+    // Ignore a reset far outside the window we could plausibly be in; a stale
+    // or malformed header must not be able to stall every later request.
+    if (Math.abs(serverWindowStart - now) > this.windowMs * 2) return;
+
+    if (serverWindowStart !== this.windowStart) {
+      this.windowStart = serverWindowStart;
+      this.used = 0;
+    }
+    // The server's own count is more authoritative than ours: it sees every
+    // client using this key, not just this process.
+    if (remaining !== undefined && Number.isFinite(remaining)) {
+      this.used = Math.max(this.used, this.maxRequests - Math.max(0, remaining));
+    }
+  }
+
   /** Milliseconds until the current window resets. */
   private msUntilReset(now: number): number {
     return Math.max(0, this.windowStart + this.windowMs - now);
@@ -44,19 +76,27 @@ export class RateLimiter {
     const now = Date.now();
     this.rollWindow(now);
 
-    if (this.used < this.maxRequests) {
+    // Never overtake a caller already waiting, even when the window has just
+    // rolled and there is room.
+    if (this.waiting.length === 0 && this.used < this.maxRequests) {
       this.used++;
       return;
     }
 
     return new Promise<void>(resolve => {
       this.waiting.push(resolve);
-      this.scheduleDrain(this.msUntilReset(Date.now()));
+      // Drain now when the window already has room, otherwise at the reset.
+      const now = Date.now();
+      this.rollWindow(now);
+      this.scheduleDrain(this.used < this.maxRequests ? 0 : this.msUntilReset(now));
     });
   }
 
   private scheduleDrain(delayMs: number): void {
     if (this.timer !== undefined) return;
+    // Deliberately not unref'd. A caller is awaiting this timer; letting the
+    // process exit before it fires would end a CLI run silently with exit 0
+    // and no output, which is worse than waiting.
     this.timer = setTimeout(
       () => {
         this.timer = undefined;
@@ -64,9 +104,6 @@ export class RateLimiter {
       },
       Math.max(delayMs, 1)
     );
-    // Never hold a Node process open just to service the queue. Workers has no
-    // unref, hence the guard rather than a direct call.
-    (this.timer as { unref?: () => void }).unref?.();
   }
 
   private drain(): void {

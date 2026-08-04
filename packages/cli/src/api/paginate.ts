@@ -39,11 +39,6 @@ export interface CollectedPages<T> {
    * "everything", and neither does an unknown total.
    */
   complete: boolean;
-  /**
-   * True when collection began past the start of the list, so records before
-   * `startIndex` were never seen regardless of `complete`.
-   */
-  startedMidList: boolean;
 }
 
 export interface CollectPagesOptions<T> {
@@ -113,6 +108,5 @@ export async function collectPages<T>(
     // Only a genuinely exhausted list, or reaching the reported total, means
     // everything from `startIndex` was retrieved.
     complete: stoppedBecause === 'exhausted' || stoppedBecause === 'total-reached',
-    startedMidList: startIndex > 0,
   };
 }

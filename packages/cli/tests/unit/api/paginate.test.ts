@@ -100,7 +100,7 @@ describe('collectPages', () => {
     expect(fetchPage.mock.calls.length).toBeGreaterThan(1);
   });
 
-  it('flags a read that began past the start of the list', async () => {
+  it('measures completeness from the requested offset, not from zero', async () => {
     const result = await collectPages(pagedSource(30), {
       pageSize: 10,
       maxPages: 5,
@@ -108,7 +108,7 @@ describe('collectPages', () => {
     });
 
     expect(result.items).toHaveLength(10);
-    expect(result.startedMidList).toBe(true);
+    expect(result.stoppedBecause).toBe('total-reached');
     expect(result.complete).toBe(true);
   });
 

@@ -13,7 +13,8 @@ import { writeFile, mkdir } from 'node:fs/promises';
 const client = new APIClient({ api_key: 'factory-supplied-key', cache_enabled: false });
 
 const FAKE_PDF = Buffer.from('%PDF-1.4 fake content');
-const S3_URL = 'https://s3.amazonaws.com/companies-house-documents/fake-signed-url';
+const S3_URL =
+  'https://s3.eu-west-2.amazonaws.com/document-api-images-live.ch.gov.uk/docs/ABC/application-pdf';
 
 function metadataBody(overrides: Record<string, unknown> = {}) {
   return {
@@ -301,6 +302,50 @@ describe('download_filing_document', () => {
       globalThis.fetch = makeFetchMock({ s3Status: 403 });
       const result = await tool.execute(client, { document_id: 'DOC018' });
       expect(result.isError).toBe(true);
+    });
+
+    it('refuses a redirect to a host that is not Companies House or its storage', async () => {
+      // A compromised or misbehaving upstream must not be able to steer the
+      // server at an arbitrary address and have the body handed back.
+      globalThis.fetch = vi.fn(async (url: string) => {
+        if (String(url).includes('/content')) {
+          return new Response(null, {
+            status: 302,
+            headers: { Location: 'https://evil.example/payload' },
+          });
+        }
+        return new Response(JSON.stringify(metadataBody()), { status: 200 });
+      }) as typeof globalThis.fetch;
+
+      const result = await tool.execute(client, { document_id: 'DOC020' });
+      expect(result.isError).toBe(true);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => String(u));
+      expect(calls.some(u => u.includes('evil.example'))).toBe(false);
+    });
+
+    it('checks every hop, not just the first', async () => {
+      globalThis.fetch = vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/content')) {
+          return new Response(null, { status: 302, headers: { Location: S3_URL } });
+        }
+        if (u === S3_URL) {
+          // An allowed host bouncing onward to somewhere that is not.
+          return new Response(null, {
+            status: 302,
+            headers: { Location: 'https://evil.example/payload' },
+          });
+        }
+        if (u.includes('/document/')) {
+          return new Response(JSON.stringify(metadataBody()), { status: 200 });
+        }
+        return new Response('should not be reached', { status: 200 });
+      }) as typeof globalThis.fetch;
+
+      const result = await tool.execute(client, { document_id: 'DOC021' });
+      expect(result.isError).toBe(true);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => String(u));
+      expect(calls.some(u => u.includes('evil.example'))).toBe(false);
     });
 
     it('reports an error when a redirect carries no Location', async () => {

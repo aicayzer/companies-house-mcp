@@ -27,11 +27,18 @@ export const DOCUMENT_API_BASE_URL = 'https://document-api.company-information.s
  * arbitrary `Location` would let a compromised or misbehaving upstream steer
  * this server at any address it liked, including one on the private network
  * the server sits in, and return the body to the caller.
+ *
+ * The S3 entry is the regional endpoint Companies House actually uses rather
+ * than all of `amazonaws.com`, which would be every bucket on AWS.
  */
 const ALLOWED_CONTENT_HOST_SUFFIXES = [
   '.company-information.service.gov.uk',
-  '.amazonaws.com',
+  '.s3.eu-west-2.amazonaws.com',
+  's3.eu-west-2.amazonaws.com',
 ] as const;
+
+/** Redirect hops to follow before giving up. One is what the API needs. */
+const MAX_CONTENT_REDIRECTS = 3;
 
 export function isAllowedContentUrl(candidate: string, base: string): URL | undefined {
   let url: URL;
@@ -121,6 +128,8 @@ async function readCappedBody(
   }
 
   if (!response.body) {
+    // No stream to meter. `content-length` was already checked above, and a
+    // body small enough to arrive without one is not a memory risk.
     const bytes = new Uint8Array(await response.arrayBuffer());
     return bytes.byteLength > maxBytes
       ? { tooLarge: true, reportedSize: bytes.byteLength }
@@ -170,22 +179,35 @@ export async function fetchDocumentContent(
     endpoint
   );
 
+  // Follow redirects by hand, checking every hop. Handing the chain to
+  // `fetch` would check only the first `Location` and then follow wherever
+  // that led, including off an allowed host onto an arbitrary address.
   let finalResponse = firstResponse;
-  if (firstResponse.status >= 300 && firstResponse.status < 400) {
-    const location = firstResponse.headers.get('location');
-    if (!location) {
+  let currentUrl = contentUrl;
+
+  for (let hop = 0; finalResponse.status >= 300 && finalResponse.status < 400; hop++) {
+    if (hop >= MAX_CONTENT_REDIRECTS) {
       throw new CompaniesHouseAPIError(
-        `Document API returned ${firstResponse.status} with no Location header.`,
-        firstResponse.status,
+        'The Document API redirected too many times, so the document was not fetched.',
+        finalResponse.status,
         endpoint
       );
     }
 
-    const target = isAllowedContentUrl(location, contentUrl);
+    const location = finalResponse.headers.get('location');
+    if (!location) {
+      throw new CompaniesHouseAPIError(
+        `Document API returned ${finalResponse.status} with no Location header.`,
+        finalResponse.status,
+        endpoint
+      );
+    }
+
+    const target = isAllowedContentUrl(location, currentUrl);
     if (!target) {
       throw new CompaniesHouseAPIError(
         'The Document API redirected somewhere unexpected, so the document was not fetched.',
-        firstResponse.status,
+        finalResponse.status,
         endpoint
       );
     }
@@ -193,10 +215,11 @@ export async function fetchDocumentContent(
     try {
       // Deliberately unauthenticated: the signed URL authenticates itself, and
       // S3 rejects a request presenting two authentication mechanisms.
-      finalResponse = await fetch(target, { method: 'GET' });
+      finalResponse = await fetch(target, { method: 'GET', redirect: 'manual' });
     } catch (error) {
       throw CompaniesHouseNetworkError.fromError(error, endpoint);
     }
+    currentUrl = target.toString();
   }
 
   if (!finalResponse.ok) {
@@ -207,7 +230,14 @@ export async function fetchDocumentContent(
     );
   }
 
-  const body = await readCappedBody(finalResponse, maxBytes);
+  let body: Awaited<ReturnType<typeof readCappedBody>>;
+  try {
+    body = await readCappedBody(finalResponse, maxBytes);
+  } catch (error) {
+    // A stream that dies mid-read is a network failure, not a bug; report it
+    // as one rather than letting a raw TypeError escape.
+    throw CompaniesHouseNetworkError.fromError(error, endpoint);
+  }
   if ('tooLarge' in body) return body;
 
   const contentType =

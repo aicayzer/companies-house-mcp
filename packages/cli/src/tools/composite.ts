@@ -813,7 +813,7 @@ registerTool({
         // appointments, which is not something this call established.
         collected.complete
           ? `**Current:** ${current.length}   **Past:** ${past.length}`
-          : `**Retrieved ${collected.items.length} of them:** ${current.length} current, ${past.length} past. The split across the remaining ${(collected.total ?? 0) - collected.items.length} is unknown.`,
+          : `**Retrieved ${collected.items.length} of them:** ${current.length} current, ${past.length} past. The split across the rest is unknown.`,
         '',
       ];
 

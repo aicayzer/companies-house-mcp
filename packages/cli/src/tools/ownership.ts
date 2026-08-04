@@ -95,8 +95,17 @@ export async function explainAbsentPSCs(
         continue;
       }
       for (const item of items) {
+        // An end date that cannot be read is treated as ended. Guessing the
+        // other way would report a company as exempt on the strength of a
+        // value nobody could parse.
         const endsAt = item.exempt_to ? new Date(item.exempt_to) : undefined;
-        const ended = endsAt !== undefined && !Number.isNaN(endsAt.getTime()) && endsAt <= now;
+        const unreadableEnd = endsAt !== undefined && Number.isNaN(endsAt.getTime());
+        // Companies House dates are calendar dates, so an exemption ending
+        // today is in force for the whole of today.
+        const endOfFinalDay =
+          endsAt && !unreadableEnd ? endsAt.getTime() + 24 * 60 * 60 * 1000 : undefined;
+        const ended =
+          unreadableEnd || (endOfFinalDay !== undefined && endOfFinalDay <= now.getTime());
         exemptions.push({
           type,
           ...(item.exempt_from ? { exempt_from: item.exempt_from } : {}),

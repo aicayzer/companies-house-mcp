@@ -134,9 +134,55 @@ describe('get_officers coverage', () => {
     );
 
     const result = await getTool('get_officers')!.execute(client, { company_number: '12345678' });
+    const text = textOf(result);
+
     expect((result.structuredContent?.coverage as { complete: boolean }).complete).toBe(false);
-    expect(textOf(result)).toContain('Coverage');
-    expect(textOf(result)).toContain('0 of 5 active officers found');
+    expect(text).toContain('Coverage');
+    expect(text).toContain('0 of 5 officers in post found');
+    // The advice must point forward, because the budget ran out rather than
+    // the list ending.
+    expect(text).toContain('page budget ran out');
+    expect(text).toContain('Continue with start_index');
+  });
+
+  it('sends the caller back to the start when the list ended before the actives were found', async () => {
+    // Reading from an offset can exhaust the list without finding the active
+    // officers, which are at lower offsets. Telling the caller to page further
+    // would send them the wrong way.
+    const client = new APIClient({ api_key: 'test', cache_enabled: false });
+    // 100 officers, the three active ones near the start of the list.
+    const officers = Array.from({ length: 100 }, (_, index) => ({
+      name: `OFFICER ${index}`,
+      officer_role: 'director',
+      // Only the first three are still in post, so reading from offset 90
+      // reaches the end of the list without finding any of them.
+      ...(index >= 3 ? { resigned_on: '2021-01-01' } : {}),
+    }));
+    vi.spyOn(client, 'get').mockImplementation(
+      async (_path: string, params?: Record<string, string | number | undefined>) => {
+        const start = Number(params?.start_index ?? 0);
+        const size = Number(params?.items_per_page ?? 50);
+        return {
+          items: officers.slice(start, start + size),
+          total_results: officers.length,
+          active_count: 3,
+          resigned_count: 97,
+          items_per_page: size,
+          start_index: start,
+          kind: 'officer-list',
+        } as never;
+      }
+    );
+
+    const result = await getTool('get_officers')!.execute(client, {
+      company_number: '12345678',
+      start_index: 90,
+    });
+    const text = textOf(result);
+
+    expect(text).toContain('to its end');
+    expect(text).toContain('start_index: 0');
+    expect(text).not.toContain('Continue with start_index');
   });
 });
 

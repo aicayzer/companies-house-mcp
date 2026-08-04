@@ -207,6 +207,11 @@ export class APIClient {
       throw CompaniesHouseNetworkError.fromError(error, endpoint);
     }
 
+    // Align the local window to the server's, and defer to its count: it sees
+    // every client using this key, not just this process.
+    const quota = readRateLimitHeaders(response.headers);
+    this.rateLimiter.observeServerWindow(quota.resetAt, quota.remaining);
+
     return response;
   }
 
