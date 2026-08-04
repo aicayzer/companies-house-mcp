@@ -1,0 +1,49 @@
+name: Publish to MCP Registry
+
+# Separate from the npm publish workflow on purpose. npm rejects a re-publish of
+# a version that already exists, so bundling the two would make the registry
+# step impossible to retry on its own. This one can be dispatched by hand
+# whenever the registry entry falls behind.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      # Required: mcp-publisher authenticates to the registry with a GitHub
+      # OIDC token rather than a stored credential, so there is no secret here.
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" \
+            | tar -xz mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Check server.json matches the published package version
+        run: |
+          SERVER_VERSION=$(node -p "require('./server.json').version")
+          PACKAGE_VERSION=$(node -p "require('./packages/mcp/package.json').version")
+          echo "server.json: $SERVER_VERSION, companies-house-mcp: $PACKAGE_VERSION"
+          if [ "$SERVER_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::server.json version does not match companies-house-mcp. The registry would advertise a version that was never published."
+            exit 1
+          fi
+
+      - name: Authenticate and publish
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
