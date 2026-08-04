@@ -7,7 +7,7 @@ import {
   isNotFound,
 } from './registry.js';
 import { getFilingHistory } from '../api/endpoints/filing.js';
-import { formatFilings, formatPagination } from '../formatters/index.js';
+import { formatFilings, formatPagination, emptyPageText } from '../formatters/index.js';
 import { companyNumberSchema, pageSizeSchema, startIndexSchema } from './shared.js';
 import type { APIClient } from '../api/client.js';
 
@@ -57,7 +57,9 @@ registerTool({
       });
       const items = result.items ?? [];
       const text = [
-        formatFilings(items, result.total_count ?? items.length),
+        items.length
+          ? formatFilings(items, result.total_count ?? items.length)
+          : emptyPageText('filings', input.start_index, result.total_count),
         formatPagination({
           start_index: input.start_index,
           items_per_page: input.items_per_page,

@@ -48,11 +48,15 @@ describe('retryDelaySeconds', () => {
     expect(retryDelaySeconds(new Headers({ 'X-Ratelimit-Reset': String(resetAt) }), NOW)).toBe(20);
   });
 
-  it('clamps a far-future reset so a call cannot stall indefinitely', () => {
+  it('reports the true wait rather than a clamped one', () => {
+    // Telling a caller "retry in about 30 seconds" when the window resets in
+    // over a minute would simply be false. Clamping belongs to the decision
+    // about how long to sleep, not to the number reported.
     const resetAt = Math.floor(NOW / 1000) + 100_000;
-    expect(retryDelaySeconds(new Headers({ 'X-Ratelimit-Reset': String(resetAt) }), NOW)).toBe(
-      MAX_RATE_LIMIT_WAIT_SECONDS
-    );
+    const reported = retryDelaySeconds(new Headers({ 'X-Ratelimit-Reset': String(resetAt) }), NOW);
+
+    expect(reported).toBe(100_000);
+    expect(reported!).toBeGreaterThan(MAX_RATE_LIMIT_WAIT_SECONDS);
   });
 
   it('treats a past reset as no wait at all', () => {

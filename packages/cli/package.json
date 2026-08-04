@@ -6,7 +6,8 @@
   "exports": {
     "./mcp": "./dist/server/mcp.js",
     "./server": "./dist/server/index.js",
-    "./secret": "./dist/server/secret.js"
+    "./secret": "./dist/server/secret.js",
+    "./tools": "./dist/tools/registry.js"
   },
   "bin": {
     "ch": "dist/cli/index.js"

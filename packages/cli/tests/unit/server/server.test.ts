@@ -190,8 +190,12 @@ describe.sequential('HTTP server boundary', () => {
 
     const response = await fetch(serverUrl(runningServer, '/health'));
     expect(response.status).toBe(200);
+    // Same core fields as the Worker's /health, so tooling written against one
+    // works against the other.
     expect(await response.json()).toEqual({
       status: 'ok',
+      service: 'companies-house-mcp',
+      version: VERSION,
       tools: 18,
       protocols: ['legacy', '2026-07-28'],
     });

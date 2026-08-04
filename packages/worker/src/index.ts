@@ -15,8 +15,11 @@
 
 import { createMcpHandler, type McpHttpHandler } from '@modelcontextprotocol/server';
 import { createCompaniesHouseMcpFactory } from 'companies-house-cli/mcp';
+import { getAllTools } from 'companies-house-cli/tools';
 import { isAuthorised } from 'companies-house-cli/secret';
 import { WORKER_VERSION } from './version.js';
+
+const TOOL_COUNT = getAllTools().length;
 
 export interface Env {
   /** The deployer's own Companies House API key. Set with `wrangler secret put`. */
@@ -30,19 +33,27 @@ export interface Env {
  * cache and rate limiter survive across requests on the same instance. Both
  * are best-effort courtesies to Companies House rather than an accounting
  * system, so losing them when an isolate is recycled is harmless.
+ *
+ * The cache is keyed on the API key so a rotated secret cannot keep being
+ * served by a warm isolate holding the old one.
  */
-let handler: McpHttpHandler | undefined;
+let cached: { apiKey: string; handler: McpHttpHandler } | undefined;
 
 function getHandler(apiKey: string): McpHttpHandler {
-  handler ??= createMcpHandler(
-    createCompaniesHouseMcpFactory({ apiKey, version: WORKER_VERSION }),
-    {
-      // Reporting only. The message never includes request bodies or headers,
-      // so a credential cannot reach the log from here.
-      onerror: error => console.error('MCP request error:', error.message),
-    }
-  );
-  return handler;
+  if (cached?.apiKey !== apiKey) {
+    cached = {
+      apiKey,
+      handler: createMcpHandler(
+        createCompaniesHouseMcpFactory({ apiKey, version: WORKER_VERSION }),
+        {
+          // Reporting only. The message never includes request bodies or
+          // headers, so a credential cannot reach the log from here.
+          onerror: error => console.error('MCP request error:', error.message),
+        }
+      ),
+    };
+  }
+  return cached.handler;
 }
 
 function json(body: Record<string, unknown>, init: ResponseInit = {}): Response {
@@ -52,8 +63,20 @@ function json(body: Record<string, unknown>, init: ResponseInit = {}): Response 
   });
 }
 
+function unauthorised(): Response {
+  return json(
+    { error: 'invalid_token', error_description: 'A valid bearer token is required.' },
+    { status: 401, headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' } }
+  );
+}
+
+/**
+ * Report a missing secret by name to the deployer, never its value.
+ *
+ * Only reachable after a successful bearer check, so an unauthenticated
+ * caller cannot use it to learn which secrets a Worker has been given.
+ */
 function misconfigured(missing: string[]): Response {
-  // Names only. The values are secrets and must never appear in a response.
   console.error(`Worker is missing required secret(s): ${missing.join(', ')}`);
   return json(
     {
@@ -74,7 +97,12 @@ export default {
       }
       // Unauthenticated on purpose, and deliberately says nothing about
       // whether the secrets are correct — only that the Worker is running.
-      return json({ status: 'ok', service: 'companies-house-mcp', version: WORKER_VERSION });
+      return json({
+        status: 'ok',
+        service: 'companies-house-mcp',
+        version: WORKER_VERSION,
+        tools: TOOL_COUNT,
+      });
     }
 
     if (url.pathname !== '/mcp') {
@@ -87,25 +115,29 @@ export default {
       );
     }
 
-    const missing: string[] = [];
-    if (!env.MCP_BEARER_TOKEN?.trim()) missing.push('MCP_BEARER_TOKEN');
-    if (!env.COMPANIES_HOUSE_API_KEY?.trim()) missing.push('COMPANIES_HOUSE_API_KEY');
-    if (missing.length) return misconfigured(missing);
+    // Authentication comes first, so an unauthenticated caller cannot use the
+    // configuration report below to learn which secrets this Worker holds.
+    const expectedToken = env.MCP_BEARER_TOKEN?.trim();
+    if (!expectedToken) {
+      // Nothing can authenticate, so nothing can be served. Answer opaquely
+      // rather than confirming the Worker is half-configured.
+      console.error('Worker is missing required secret(s): MCP_BEARER_TOKEN');
+      return json(
+        { error: 'unavailable', error_description: 'This server is not available.' },
+        { status: 503 }
+      );
+    }
 
     // The gate is at the HTTP layer. A 200 carrying a tool error would read to
     // a client as an ordinary tool failure and would never prompt for
     // credentials, so authentication failures answer 401 with a challenge.
-    const authorised = await isAuthorised(
-      request.headers.get('authorization'),
-      env.MCP_BEARER_TOKEN!.trim()
-    );
-    if (!authorised) {
-      return json(
-        { error: 'invalid_token', error_description: 'A valid bearer token is required.' },
-        { status: 401, headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' } }
-      );
+    if (!(await isAuthorised(request.headers.get('authorization'), expectedToken))) {
+      return unauthorised();
     }
 
-    return getHandler(env.COMPANIES_HOUSE_API_KEY!.trim()).fetch(request);
+    const apiKey = env.COMPANIES_HOUSE_API_KEY?.trim();
+    if (!apiKey) return misconfigured(['COMPANIES_HOUSE_API_KEY']);
+
+    return getHandler(apiKey).fetch(request);
   },
 };

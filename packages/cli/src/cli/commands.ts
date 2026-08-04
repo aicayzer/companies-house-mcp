@@ -93,7 +93,7 @@ export const COMMANDS: CommandDefinition[] = [
     tool: 'download_filing_document',
     summary: 'Download the document behind a filing',
     positionals: ['document_id'],
-    aliases: { '--out': 'save_to', '--format': 'format', '--info': 'metadata_only' },
+    aliases: { '--info': 'metadata_only' },
     examples: [
       'ch document eeYoqJBWImTwDhRS2-qlLbqPPTGY7B0u9o40vDAuC9s --info',
       'ch document eeYoqJBWImTwDhRS2-qlLbqPPTGY7B0u9o40vDAuC9s --out ./accounts.pdf',

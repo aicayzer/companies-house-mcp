@@ -10,8 +10,14 @@ import {
   formatOfficerSearchResults,
   formatAddress,
   formatPagination,
+  emptyPageText,
 } from '../formatters/index.js';
-import { pageSizeSchema, searchStartIndexSchema } from './shared.js';
+import {
+  pageSizeSchema,
+  searchStartIndexSchema,
+  SEARCH_MAX_START_INDEX,
+  SEARCH_TOTAL_CEILING,
+} from './shared.js';
 import type { APIClient } from '../api/client.js';
 import type { CompanySearchResponse } from '../types/index.js';
 
@@ -101,13 +107,21 @@ registerTool({
 
       const items = result.items ?? [];
       const text = [
-        formatCompanySearchResults(items, result.total_results ?? 0),
+        items.length
+          ? formatCompanySearchResults(items, result.total_results ?? 0)
+          : emptyPageText('companies', input.start_index, result.total_results),
         formatPagination({
           start_index: input.start_index,
           items_per_page: input.items_per_page,
           returned: items.length,
           total: result.total_results,
+          max_start_index: SEARCH_MAX_START_INDEX,
         }),
+        // Companies House caps the reported total, so a round 10,000 is a
+        // ceiling rather than a count.
+        (result.total_results ?? 0) >= SEARCH_TOTAL_CEILING
+          ? `_Companies House caps reported search totals at ${SEARCH_TOTAL_CEILING}; the real number of matches may be higher. Narrow the query._`
+          : '',
       ]
         .filter(Boolean)
         .join('\n');
@@ -150,13 +164,19 @@ registerTool({
       });
       const items = result.items ?? [];
       const text = [
-        formatOfficerSearchResults(items, result.total_results ?? 0),
+        items.length
+          ? formatOfficerSearchResults(items, result.total_results ?? 0)
+          : emptyPageText('officers', input.start_index, result.total_results),
         formatPagination({
           start_index: input.start_index,
           items_per_page: input.items_per_page,
           returned: items.length,
           total: result.total_results,
+          max_start_index: SEARCH_MAX_START_INDEX,
         }),
+        (result.total_results ?? 0) >= SEARCH_TOTAL_CEILING
+          ? `_Companies House caps reported search totals at ${SEARCH_TOTAL_CEILING}; the real number of matches may be higher. Narrow the query._`
+          : '',
       ]
         .filter(Boolean)
         .join('\n');

@@ -20,19 +20,6 @@ export const TOOL_ANNOTATIONS = {
   openWorldHint: true,
 } as const satisfies ToolAnnotations;
 
-/**
- * Annotations for the document tool. It is read-only against Companies House
- * but can write a file when the caller explicitly asks it to, so it does not
- * claim `readOnlyHint`. Repeating a call replaces the same deterministic
- * filename rather than accumulating files, so it is idempotent.
- */
-export const DOWNLOAD_TOOL_ANNOTATIONS = {
-  readOnlyHint: false,
-  destructiveHint: false,
-  idempotentHint: true,
-  openWorldHint: true,
-} as const satisfies ToolAnnotations;
-
 export interface TextContentBlock {
   type: 'text';
   text: string;
@@ -168,7 +155,7 @@ export const REGISTER_LIMITATIONS = [
   'This describes what is recorded on the Companies House public register at the time of the request. It is not a verification, credit check, sanctions or politically-exposed-person screening, or any form of clearance.',
   'Companies House carries out basic completeness checks on filings but does not verify that the information companies file is accurate.',
   'The register does not cover trading performance, litigation, sanctions, or beneficial ownership held outside the persons-with-significant-control regime.',
-  'Identity verification for existing directors and persons with significant control is still being rolled out under the Economic Crime and Corporate Transparency Act, so an entry on the register does not mean the person behind it has been identity-checked.',
+  'Identity verification became mandatory for new directors and persons with significant control in November 2025, but existing ones remain in a transition period, so an older entry on the register does not mean the person behind it has been identity-checked.',
 ] as const;
 
 export function limitationLines(): string[] {

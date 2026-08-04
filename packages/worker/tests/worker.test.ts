@@ -52,6 +52,8 @@ describe('routing', () => {
     await expect(response.json()).resolves.toMatchObject({
       status: 'ok',
       service: 'companies-house-mcp',
+      version: WORKER_VERSION,
+      tools: 18,
     });
   });
 
@@ -120,24 +122,45 @@ describe('authentication', () => {
     expect(await response.text()).not.toContain(TOKEN);
   });
 
-  it('reports a missing secret as a server error, naming it without its value', async () => {
+  it('says nothing about its configuration to an unauthenticated caller', async () => {
+    // Without a bearer token nothing can authenticate, so the answer must not
+    // double as a fingerprint of which secrets the deployer has set.
     const response = await worker.fetch(
-      request('/mcp', { method: 'POST', body: initializeBody(), token: TOKEN }),
+      request('/mcp', { method: 'POST', body: initializeBody() }),
       { COMPANIES_HOUSE_API_KEY: 'key' }
     );
-    expect(response.status).toBe(500);
-    const body = await response.json();
-    expect(body).toMatchObject({ error: 'server_misconfigured' });
-    expect(JSON.stringify(body)).toContain('MCP_BEARER_TOKEN');
-    expect(JSON.stringify(body)).not.toContain('key');
+    expect(response.status).toBe(503);
+    const body = JSON.stringify(await response.json());
+    expect(body).not.toContain('COMPANIES_HOUSE_API_KEY');
+    expect(body).not.toContain('MCP_BEARER_TOKEN');
+    expect(body).not.toContain('key');
   });
 
-  it('refuses before treating a blank token as valid', async () => {
+  it('treats a blank configured token as no token at all', async () => {
     const response = await worker.fetch(
       request('/mcp', { method: 'POST', body: initializeBody(), token: TOKEN }),
       { COMPANIES_HOUSE_API_KEY: 'key', MCP_BEARER_TOKEN: '   ' }
     );
+    expect(response.status).toBe(503);
+  });
+
+  it('names a missing API key only once the caller has authenticated', async () => {
+    const response = await worker.fetch(
+      request('/mcp', { method: 'POST', body: initializeBody(), token: TOKEN }),
+      { MCP_BEARER_TOKEN: TOKEN }
+    );
     expect(response.status).toBe(500);
+    const body = JSON.stringify(await response.json());
+    expect(body).toContain('COMPANIES_HOUSE_API_KEY');
+    expect(body).not.toContain(TOKEN);
+  });
+
+  it('still refuses a wrong token when the API key is missing', async () => {
+    const response = await worker.fetch(
+      request('/mcp', { method: 'POST', body: initializeBody(), token: 'wrong' }),
+      { MCP_BEARER_TOKEN: TOKEN }
+    );
+    expect(response.status).toBe(401);
   });
 });
 

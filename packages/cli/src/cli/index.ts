@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { APIClient } from '../api/client.js';
 import { getTool, getAllTools, TOOL_GROUP_TITLES, type ToolGroup } from '../tools/registry.js';
 import { resolveApiKey, writeApiKey, clearApiKey, getConfigPath } from '../config.js';
 import { markdownToTerminal } from './terminal-format.js';
+import { z } from 'zod';
 import { COMMANDS, type CommandDefinition } from './commands.js';
 import { describeParameters, type ToolParameter } from './schema-introspect.js';
 
@@ -193,6 +195,17 @@ function printCommandUsage(command: CommandDefinition): void {
     lines.push(`${name}:`, `  ${parameter.description}`, '');
   }
 
+  if (command.name === 'document') {
+    lines.push(
+      'CLI-only flags:',
+      '  --out <path>',
+      '      Write the retrieved document to this file. Relative paths resolve against',
+      '      the current directory. The MCP tool itself never writes files; this is the',
+      '      CLI saving what the tool returned.',
+      ''
+    );
+  }
+
   lines.push('Output: --md for markdown, --json for the structured payload.', '', 'Examples:');
   for (const example of command.examples) lines.push(`  ${example}`);
   console.log(lines.join('\n'));
@@ -238,8 +251,8 @@ function parseCommandArguments(
     const arg = args[index]!;
 
     if (GLOBAL_FLAGS.has(arg)) continue;
-    if (arg === '--key') {
-      index++; // consumes its value, handled globally
+    if (arg === '--key' || arg === '--out') {
+      index++; // consumes its value, handled outside the tool parameters
       continue;
     }
 
@@ -304,6 +317,13 @@ function handleConfigCommand(args: string[]): void {
   if (subcommand === 'set-key') {
     const key = args[1];
     if (!key) fail('Usage: ch config set-key <api-key>', EXIT_USAGE);
+    // Catch a copy-pasted placeholder before it becomes a confusing 401 later.
+    if (/^(your|my)[-_]?(api[-_]?)?key/i.test(key) || key.includes('<') || key.includes('>')) {
+      fail(
+        `That looks like a placeholder, not a key: "${key}"\nGet a free key at https://developer.company-information.service.gov.uk/`,
+        EXIT_USAGE
+      );
+    }
     writeApiKey(key);
     console.log(`API key saved to ${getConfigPath()} with owner-only permissions.`);
     return;
@@ -316,9 +336,11 @@ function handleConfigCommand(args: string[]): void {
       console.log(`Config file would be: ${getConfigPath()}`);
       return;
     }
-    // Only ever the last four characters, so the key cannot be reconstructed
-    // from terminal scrollback or a pasted log.
-    console.log(`API key: ****${resolved.key.slice(-4)}`);
+    // Only ever a short tail, so the key cannot be reconstructed from terminal
+    // scrollback or a pasted log — and nothing at all for a key too short for
+    // a tail to be safe.
+    const tail = resolved.key.length > 8 ? resolved.key.slice(-4) : '';
+    console.log(`API key: ****${tail}`);
     console.log(
       `Source:  ${
         resolved.source === 'env'
@@ -374,7 +396,11 @@ async function main(): Promise<void> {
   }
 
   if (commandName === 'serve') {
-    const { runServer } = await import('../server/index.js');
+    const { runServer, SERVE_USAGE } = await import('../server/index.js');
+    if (wantsHelp) {
+      console.log(SERVE_USAGE);
+      process.exit(EXIT_OK);
+    }
     await runServer({ version: cliVersion, argv: args.slice(1) });
     return;
   }
@@ -419,6 +445,15 @@ async function main(): Promise<void> {
   const outputJson = args.includes('--json');
   const outputMarkdown = args.includes('--md') || args.includes('--markdown');
 
+  // `--out` is a CLI concern, not a tool parameter. Keeping the file write
+  // here means no MCP caller — and no text inside a filed document — can
+  // reach a write path on the machine running the server.
+  const outIndex = args.indexOf('--out');
+  const outPath = outIndex !== -1 ? args[outIndex + 1] : undefined;
+  if (outIndex !== -1 && (!outPath || outPath.startsWith('--'))) {
+    fail('--out needs a file path.', EXIT_USAGE);
+  }
+
   const missing = command.positionals.filter(name => params[name] === undefined);
   if (missing.length) {
     const parameters = describeParameters(tool.inputSchema);
@@ -450,25 +485,54 @@ async function main(): Promise<void> {
       }
     }
 
-    // A retrieved document is bytes, not prose: write it where the caller
-    // asked, or tell them how to ask, rather than printing base64.
-    const saveTarget = params['save_to'];
+    // A retrieved document is bytes, not prose. Write it where the caller
+    // asked, or say how to ask, rather than printing base64 at a terminal.
     const resourceBlock = result.content.find(block => block.type === 'resource');
     if (resourceBlock?.type === 'resource' && !outputJson) {
       const { resource } = resourceBlock;
-      if (typeof saveTarget === 'string' && saveTarget) {
-        // The tool already wrote it; nothing more to do here.
+      const bytes =
+        'blob' in resource
+          ? Uint8Array.from(Buffer.from(resource.blob, 'base64'))
+          : new TextEncoder().encode(resource.text);
+
+      if (outPath) {
+        try {
+          mkdirSync(dirname(resolve(outPath)), { recursive: true });
+          writeFileSync(resolve(outPath), bytes);
+          console.log(
+            `\nWritten to ${resolve(outPath)} (${bytes.byteLength.toLocaleString()} bytes).`
+          );
+        } catch (error) {
+          fail(
+            `Could not write to ${outPath}: ${error instanceof Error ? error.message : String(error)}`,
+            EXIT_TOOL_ERROR
+          );
+        }
       } else {
-        const size = 'blob' in resource ? 'binary' : `${resource.text.length} characters`;
         console.log(
-          `\nThe document (${size}) was not written to disk. Re-run with --out <path> to save it.`
+          `\nThe document (${bytes.byteLength.toLocaleString()} bytes) was not saved. Re-run with --out <path> to write it to a file.`
         );
       }
     }
 
     if (result.isError) process.exit(EXIT_TOOL_ERROR);
   } catch (error) {
-    fail(`Error: ${(error as Error).message}`, EXIT_TOOL_ERROR);
+    if (error instanceof z.ZodError) {
+      const problems = error.issues.map(issue => {
+        const where = issue.path.length ? `${issue.path.join('.')}: ` : '';
+        return `  ${where}${issue.message}`;
+      });
+      fail(
+        [
+          `ch ${command.name} rejected the arguments:`,
+          ...problems,
+          '',
+          `Run "ch ${command.name} --help" for usage.`,
+        ].join('\n'),
+        EXIT_USAGE
+      );
+    }
+    fail(`Error: ${error instanceof Error ? error.message : String(error)}`, EXIT_TOOL_ERROR);
   }
 }
 

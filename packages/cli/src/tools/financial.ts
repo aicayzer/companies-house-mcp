@@ -14,6 +14,7 @@ import {
   formatPagination,
   chargeCounts,
   formatChargeCounts,
+  emptyPageText,
 } from '../formatters/index.js';
 import { companyNumberSchema, pageSizeSchema, startIndexSchema } from './shared.js';
 import type { APIClient } from '../api/client.js';
@@ -47,7 +48,9 @@ registerTool({
       const text = [
         formatChargeCounts(counts),
         '',
-        formatCharges(items, counts.total),
+        items.length
+          ? formatCharges(items, counts.total)
+          : emptyPageText('charges', input.start_index, counts.total),
         formatPagination({
           start_index: input.start_index,
           items_per_page: input.items_per_page,

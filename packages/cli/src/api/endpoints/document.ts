@@ -21,6 +21,35 @@ import type { DocumentMetadata } from '../../types/index.js';
 export const DOCUMENT_API_BASE_URL = 'https://document-api.company-information.service.gov.uk';
 
 /**
+ * Hosts the content redirect is allowed to point at.
+ *
+ * Companies House hands out a signed URL on its own S3 bucket. Following an
+ * arbitrary `Location` would let a compromised or misbehaving upstream steer
+ * this server at any address it liked, including one on the private network
+ * the server sits in, and return the body to the caller.
+ */
+const ALLOWED_CONTENT_HOST_SUFFIXES = [
+  '.company-information.service.gov.uk',
+  '.amazonaws.com',
+] as const;
+
+export function isAllowedContentUrl(candidate: string, base: string): URL | undefined {
+  let url: URL;
+  try {
+    url = new URL(candidate, base);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'https:') return undefined;
+
+  const host = url.hostname.toLowerCase();
+  const allowed = ALLOWED_CONTENT_HOST_SUFFIXES.some(
+    suffix => host === suffix.slice(1) || host.endsWith(suffix)
+  );
+  return allowed ? url : undefined;
+}
+
+/**
  * Accept the raw id, a `/document/{id}` path, or the full
  * `links.document_metadata` URL that filing history items carry.
  */
@@ -63,19 +92,80 @@ export async function getDocumentMetadata(
   return (await response.json()) as DocumentMetadata;
 }
 
-export interface FetchedDocumentContent {
-  bytes: Uint8Array;
-  contentType: string;
+export type FetchedDocumentContent =
+  | { tooLarge: false; bytes: Uint8Array; contentType: string }
+  /** The body was refused before being buffered. */
+  | { tooLarge: true; reportedSize?: number };
+
+export interface FetchDocumentOptions {
+  /** Refuse the body rather than buffering more than this many bytes. */
+  maxBytes?: number;
+}
+
+/**
+ * Read the body without ever holding more than `maxBytes` of it.
+ *
+ * `content-length` is checked first, but it is advisory and absent on a
+ * chunked response, so the stream is also counted as it arrives and abandoned
+ * the moment it goes over. Buffering first and checking afterwards would let a
+ * large document exhaust a Worker isolate before the limit could apply.
+ */
+async function readCappedBody(
+  response: Response,
+  maxBytes: number
+): Promise<{ bytes: Uint8Array } | { tooLarge: true; reportedSize?: number }> {
+  const declared = Number.parseInt(response.headers.get('content-length') ?? '', 10);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel().catch(() => {});
+    return { tooLarge: true, reportedSize: declared };
+  }
+
+  if (!response.body) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return bytes.byteLength > maxBytes
+      ? { tooLarge: true, reportedSize: bytes.byteLength }
+      : { bytes };
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return { tooLarge: true };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { bytes };
 }
 
 export async function fetchDocumentContent(
   client: APIClient,
   documentId: string,
-  accept: string
+  accept: string,
+  { maxBytes = Number.POSITIVE_INFINITY }: FetchDocumentOptions = {}
 ): Promise<FetchedDocumentContent> {
   const endpoint = `/document/${documentId}/content`;
+  const contentUrl = `${DOCUMENT_API_BASE_URL}/document/${encodeURIComponent(documentId)}/content`;
   const firstResponse = await client.fetchWithAuth(
-    `${DOCUMENT_API_BASE_URL}/document/${encodeURIComponent(documentId)}/content`,
+    contentUrl,
     { method: 'GET', redirect: 'manual', headers: { Accept: accept } },
     endpoint
   );
@@ -90,9 +180,20 @@ export async function fetchDocumentContent(
         endpoint
       );
     }
+
+    const target = isAllowedContentUrl(location, contentUrl);
+    if (!target) {
+      throw new CompaniesHouseAPIError(
+        'The Document API redirected somewhere unexpected, so the document was not fetched.',
+        firstResponse.status,
+        endpoint
+      );
+    }
+
     try {
-      // Deliberately unauthenticated: the signed URL authenticates itself.
-      finalResponse = await fetch(location, { method: 'GET' });
+      // Deliberately unauthenticated: the signed URL authenticates itself, and
+      // S3 rejects a request presenting two authentication mechanisms.
+      finalResponse = await fetch(target, { method: 'GET' });
     } catch (error) {
       throw CompaniesHouseNetworkError.fromError(error, endpoint);
     }
@@ -106,11 +207,13 @@ export async function fetchDocumentContent(
     );
   }
 
-  const bytes = new Uint8Array(await finalResponse.arrayBuffer());
+  const body = await readCappedBody(finalResponse, maxBytes);
+  if ('tooLarge' in body) return body;
+
   const contentType =
     finalResponse.headers.get('content-type')?.split(';')[0]?.trim() ||
     accept ||
     'application/octet-stream';
 
-  return { bytes, contentType };
+  return { tooLarge: false, bytes: body.bytes, contentType };
 }

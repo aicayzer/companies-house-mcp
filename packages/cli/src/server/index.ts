@@ -77,6 +77,32 @@ function readOptionValue(args: readonly string[], index: number, option: string)
   return value;
 }
 
+export const SERVE_USAGE = [
+  'ch serve — run the Companies House MCP server',
+  '',
+  'Usage: ch serve [--http [--host <host>] [--port <port>]]',
+  '',
+  'Transports:',
+  '  (default)  stdio — what MCP clients launch directly',
+  '  --http     Streamable HTTP on http://127.0.0.1:3000/mcp',
+  '',
+  'Flags:',
+  '  --host <host>  Bind address for --http (default 127.0.0.1)',
+  '  --port <port>  Port for --http (default 3000)',
+  '',
+  'Any bind other than loopback requires MCP_BEARER_TOKEN; the server refuses',
+  'to start without one.',
+  '',
+  'Environment:',
+  '  COMPANIES_HOUSE_API_KEY  Required. Your own key.',
+  '  MCP_BEARER_TOKEN         Required for a non-loopback --http bind.',
+  '',
+  'Examples:',
+  '  ch serve',
+  '  ch serve --http',
+  '  MCP_BEARER_TOKEN=$(openssl rand -hex 32) ch serve --http --host 0.0.0.0 --port 8080',
+].join('\n');
+
 export function parseServerArguments(args: readonly string[]): ServerArguments {
   let mode: ServerArguments['mode'] = 'stdio';
   let host = DEFAULT_HOST;
@@ -212,13 +238,14 @@ async function startHttpServer(
   factory: ReturnType<typeof createCompaniesHouseMcpFactory>,
   host: string,
   port: number,
-  bearerToken: string | undefined
+  bearerToken: string | undefined,
+  version: string
 ): Promise<RunningServer> {
   const mcpHandler: McpHttpHandler = createMcpHandler(factory, {
-    onerror: error => console.error('MCP request error:', error),
+    onerror: error => console.error('MCP request error:', error.message),
   });
   const handleMcpRequest = toNodeHandler(mcpHandler, {
-    onerror: error => console.error('MCP Node adapter error:', error),
+    onerror: error => console.error('MCP Node adapter error:', error.message),
   });
   const validateHost = isLoopbackHost(host) ? localhostHostValidation() : undefined;
   const validateOrigin = isLoopbackHost(host) ? localhostOriginValidation() : undefined;
@@ -239,14 +266,22 @@ async function startHttpServer(
       res.end(
         req.method === 'HEAD'
           ? undefined
-          : JSON.stringify({ status: 'ok', tools: toolCount, protocols: MCP_PROTOCOLS })
+          : JSON.stringify({
+              status: 'ok',
+              service: 'companies-house-mcp',
+              version,
+              tools: toolCount,
+              protocols: MCP_PROTOCOLS,
+            })
       );
       return;
     }
 
     if (url.pathname !== '/mcp') {
-      res.writeHead(404);
-      res.end('Not Found');
+      writeJson(res, 404, {
+        error: 'not_found',
+        error_description: 'The MCP endpoint is /mcp. GET /health reports liveness.',
+      });
       return;
     }
 
@@ -304,7 +339,7 @@ function startStdioServer(
   factory: ReturnType<typeof createCompaniesHouseMcpFactory>
 ): RunningServer {
   const stdioHandle: StdioServerHandle = serveStdio(factory, {
-    onerror: error => console.error('MCP stdio error:', error),
+    onerror: error => console.error('MCP stdio error:', error.message),
   });
 
   let removeSignalHandlers = () => {};
@@ -347,6 +382,6 @@ export async function runServer({
   });
 
   return args.mode === 'http'
-    ? startHttpServer(factory, args.host, args.port, bearerToken)
+    ? startHttpServer(factory, args.host, args.port, bearerToken, version)
     : startStdioServer(factory);
 }

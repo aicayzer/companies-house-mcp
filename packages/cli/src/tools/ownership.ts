@@ -8,7 +8,8 @@ import {
 } from './registry.js';
 import { getPersonsWithSignificantControl, getPSCStatements } from '../api/endpoints/psc.js';
 import { getExemptions } from '../api/endpoints/exemptions.js';
-import { formatPSCs, formatPagination, formatDate } from '../formatters/index.js';
+import { formatPSCs, formatPagination, formatDate, emptyPageText } from '../formatters/index.js';
+import { describeAbsentPSCs } from './psc-explanation.js';
 import { companyNumberSchema, pageSizeSchema, startIndexSchema } from './shared.js';
 import type { APIClient } from '../api/client.js';
 import type { ExemptionsData, PSCStatement } from '../types/index.js';
@@ -20,50 +21,115 @@ const shape = {
 };
 const schema = z.object(shape);
 
-/** Exemption keys that remove the obligation to keep a PSC register. */
+/**
+ * Exemption keys that remove the obligation to keep a PSC register.
+ *
+ * All five the exemptions resource can carry, including both the UK and EU
+ * regulated-market keys. A company can move between them — several moved from
+ * the EU key to the UK key after 2020 — so a missing key would make a
+ * genuinely exempt company look like one that had simply stopped filing.
+ */
 const PSC_EXEMPTION_KEYS = [
   'psc_exempt_as_trading_on_regulated_market',
-  'psc_exempt_as_shares_admitted_on_market',
   'psc_exempt_as_trading_on_uk_regulated_market',
+  'psc_exempt_as_trading_on_eu_regulated_market',
+  'psc_exempt_as_shares_admitted_on_market',
+  'psc_exempt_as_trading_on_us_regulated_market',
 ];
 
+export interface PSCExemption {
+  type: string;
+  exempt_from?: string;
+  exempt_to?: string;
+  /** True when no end date has passed. */
+  current: boolean;
+}
+
 export interface PSCExplanation {
+  /** True only when at least one PSC exemption is still in force. */
   exempt: boolean;
   exemption_types: string[];
+  /** Every PSC exemption on record, current or ended. */
+  exemptions: PSCExemption[];
+  /** Exemptions that have ended. Their expiry is what matters to a reader. */
+  expired_exemptions: PSCExemption[];
   statements: PSCStatement[];
+  active_statements: PSCStatement[];
 }
 
 /**
- * Explain an empty PSC list. A company with no PSC entries may be exempt —
- * typically because it trades on a regulated market and discloses ownership
- * under market rules instead — or may have filed a statement in place of an
- * entry. Without this, an absent PSC register reads as a compliance gap when
- * it is usually neither.
+ * Explain an empty PSC list.
+ *
+ * A company with no PSC entries may be exempt — typically because it trades on
+ * a regulated market and discloses ownership under market rules instead — or
+ * may have filed a statement in place of an entry. Without this, an absent PSC
+ * register reads as a compliance gap when it is usually neither.
+ *
+ * Exemptions expire. An exemption that ended is not a reason the register is
+ * empty *now*, and reporting one as current would tell a reader a company is
+ * legitimately exempt when in fact it lost the exemption and stopped filing —
+ * the exact opposite of the truth. So the end dates are read, and statements
+ * are evaluated independently rather than only when no exemption exists.
  */
 export async function explainAbsentPSCs(
   client: APIClient,
-  companyNumber: string
+  companyNumber: string,
+  now: Date = new Date()
 ): Promise<PSCExplanation> {
-  const [exemptions, statements] = await Promise.allSettled([
+  const [exemptionsResult, statementsResult] = await Promise.allSettled([
     getExemptions(client, companyNumber),
     getPSCStatements(client, companyNumber, { items_per_page: 25 }),
   ]);
 
-  const exemptionTypes: string[] = [];
-  if (exemptions.status === 'fulfilled') {
-    const data = exemptions.value as ExemptionsData;
+  const exemptions: PSCExemption[] = [];
+  if (exemptionsResult.status === 'fulfilled') {
+    const data = exemptionsResult.value as ExemptionsData;
     for (const [key, value] of Object.entries(data.exemptions ?? {})) {
-      if (PSC_EXEMPTION_KEYS.includes(key)) {
-        exemptionTypes.push(value.exemption_type ?? key);
+      if (!PSC_EXEMPTION_KEYS.includes(key)) continue;
+      const type = value.exemption_type ?? key.replace(/_/g, '-');
+      const items = value.items ?? [];
+
+      if (!items.length) {
+        // No dates at all: nothing says it has ended.
+        exemptions.push({ type, current: true });
+        continue;
+      }
+      for (const item of items) {
+        const endsAt = item.exempt_to ? new Date(item.exempt_to) : undefined;
+        const ended = endsAt !== undefined && !Number.isNaN(endsAt.getTime()) && endsAt <= now;
+        exemptions.push({
+          type,
+          ...(item.exempt_from ? { exempt_from: item.exempt_from } : {}),
+          ...(item.exempt_to ? { exempt_to: item.exempt_to } : {}),
+          current: !ended,
+        });
       }
     }
   }
 
+  const current = exemptions.filter(exemption => exemption.current);
+  const statements =
+    statementsResult.status === 'fulfilled' ? (statementsResult.value.items ?? []) : [];
+
   return {
-    exempt: exemptionTypes.length > 0,
-    exemption_types: exemptionTypes,
-    statements: statements.status === 'fulfilled' ? (statements.value.items ?? []) : [],
+    exempt: current.length > 0,
+    exemption_types: [...new Set(current.map(exemption => exemption.type))],
+    exemptions,
+    expired_exemptions: exemptions.filter(exemption => !exemption.current),
+    statements,
+    active_statements: statements.filter(statement => !statement.ceased_on),
   };
+}
+
+/** One line per exemption, with the dates that decide whether it still applies. */
+export function describeExemptions(exemptions: PSCExemption[]): string {
+  return exemptions
+    .map(exemption => {
+      const from = exemption.exempt_from ? ` from ${formatDate(exemption.exempt_from)}` : '';
+      const to = exemption.exempt_to ? ` to ${formatDate(exemption.exempt_to)}` : '';
+      return `${exemption.type}${from}${to}`;
+    })
+    .join('; ');
 }
 
 /**
@@ -121,39 +187,32 @@ registerTool({
 
       if (items.length === 0 && (result.total_results ?? 0) === 0) {
         const explanation = await explainAbsentPSCs(client, input.company_number);
-        const lines = ['## Ownership (persons with significant control)', ''];
-
-        if (explanation.exempt) {
-          lines.push(
-            'No PSC entries. The company is recorded as exempt from the PSC requirements, which normally applies to companies whose shares are admitted to a regulated market and whose ownership is disclosed under market rules instead.',
-            '',
-            `Exemption(s) on record: ${explanation.exemption_types.join(', ')}.`,
-            ''
-          );
-        } else if (explanation.statements.length) {
-          lines.push('No PSC entries. A statement has been filed in place of an entry.', '');
-          lines.push(...formatPSCStatements(explanation.statements));
-        } else {
-          lines.push(
-            'No PSC entries, no exemption on record, and no statement filed in place of one. The company may not have filed PSC information. This is an absence of data, not evidence about who controls the company.',
-            ''
-          );
-        }
+        const narrative = describeAbsentPSCs(explanation);
+        const lines = ['## Ownership (persons with significant control)', '', ...narrative.lines];
 
         return makeTextResult(lines.join('\n'), {
           ...(result as unknown as Record<string, unknown>),
           items: [],
           psc_exempt: explanation.exempt,
           psc_exemption_types: explanation.exemption_types,
+          psc_exemptions: explanation.exemptions,
+          psc_expired_exemptions: explanation.expired_exemptions,
           psc_statements: explanation.statements,
+          psc_absence_explained: !narrative.unexplained,
         });
       }
 
       const text = [
-        formatPSCs(items, result.total_results ?? items.length, {
-          active: result.active_count,
-          ceased: result.ceased_count,
-        }),
+        items.length
+          ? formatPSCs(items, result.total_results ?? items.length, {
+              active: result.active_count,
+              ceased: result.ceased_count,
+            })
+          : emptyPageText(
+              'persons with significant control',
+              input.start_index,
+              result.total_results
+            ),
         formatPagination({
           start_index: input.start_index,
           items_per_page: input.items_per_page,

@@ -43,7 +43,8 @@ import {
   formatPagination,
   accountsOverdue,
 } from '../formatters/index.js';
-import { explainAbsentPSCs, formatPSCStatements } from './ownership.js';
+import { explainAbsentPSCs } from './ownership.js';
+import { describeAbsentPSCs } from './psc-explanation.js';
 import { collectPages } from '../api/paginate.js';
 import { companyNumberSchema, officerIdSchema, pageSizeSchema, MAX_AUTO_PAGES } from './shared.js';
 import type { APIClient } from '../api/client.js';
@@ -126,12 +127,20 @@ registerTool({
           );
         }
         structured.officers = { ...list, active_officers: active };
+        // Two different questions: did we see every officer record, and did we
+        // see every officer still in post? Only the first justifies "all
+        // records retrieved" next to a record count.
+        const readEveryRecord = all.length >= (list.total_results ?? all.length);
         coverage.push({
           resource: 'Officers',
-          status: complete ? 'complete' : 'partial',
+          status: readEveryRecord ? 'complete' : 'partial',
           retrieved: all.length,
           total: list.total_results,
-          note: complete ? undefined : 'use get_officers to page through the rest',
+          note: readEveryRecord
+            ? undefined
+            : complete
+              ? `every officer in post is included; the remaining records are resigned officers — use get_officers with include_resigned for those`
+              : 'use get_officers to page through the rest',
         });
       } else {
         sections.push('Officer records could not be retrieved for this request.');
@@ -145,25 +154,22 @@ registerTool({
         const items = list.items ?? [];
         if (items.length === 0 && (list.total_results ?? 0) === 0) {
           const explanation = await explainAbsentPSCs(client, company_number);
-          if (explanation.exempt) {
-            sections.push(
-              `No PSC entries. The company is recorded as exempt from the PSC requirements (${explanation.exemption_types.join(', ')}), which normally applies to companies whose shares trade on a regulated market.\n`
-            );
-          } else if (explanation.statements.length) {
-            sections.push('No PSC entries. A statement has been filed in place of an entry.\n');
-            sections.push(formatPSCStatements(explanation.statements).join('\n'));
-          } else {
-            sections.push(
-              'No PSC entries, no exemption on record, and no statement filed in place of one. This is an absence of data rather than evidence about who controls the company.\n'
-            );
-          }
+          const narrative = describeAbsentPSCs(explanation);
+          sections.push(narrative.lines.join('\n'));
           structured.pscs = {
             ...list,
             psc_exempt: explanation.exempt,
             psc_exemption_types: explanation.exemption_types,
+            psc_exemptions: explanation.exemptions,
+            psc_expired_exemptions: explanation.expired_exemptions,
             psc_statements: explanation.statements,
+            psc_absence_explained: !narrative.unexplained,
           };
-          coverage.push({ resource: 'Persons with significant control', status: 'not-applicable' });
+          coverage.push({
+            resource: 'Persons with significant control',
+            status: 'not-applicable',
+            note: narrative.coverageNote,
+          });
         } else {
           sections.push(
             formatPSCs(items, list.total_results ?? items.length, {
@@ -437,7 +443,12 @@ registerTool({
             source: 'charges record',
           });
         }
-        coverage.push({ resource: 'Charges', status: 'complete', total: counts.total });
+        coverage.push({
+          resource: 'Charges',
+          status: 'complete',
+          total: counts.total,
+          note: 'counted from the register totals rather than by reading each charge',
+        });
       } else if (charges.status === 'fulfilled' || isNotFound(charges.reason)) {
         checks.push({ check: 'Registered charges', status: 'ran' });
         coverage.push({ resource: 'Charges', status: 'not-applicable' });
@@ -544,39 +555,25 @@ registerTool({
           // An empty PSC register is only worth remarking on when it is not
           // explained by an exemption or a filed statement.
           const explanation = await explainAbsentPSCs(client, company_number);
+          const narrative = describeAbsentPSCs(explanation);
           checks.push({ check: 'Ownership (PSC)', status: 'ran' });
-          if (explanation.exempt) {
-            coverage.push({
-              resource: 'Persons with significant control',
-              status: 'not-applicable',
-              note: `company is exempt (${explanation.exemption_types.join(', ')})`,
-            });
-          } else if (explanation.statements.length) {
-            coverage.push({
-              resource: 'Persons with significant control',
-              status: 'not-applicable',
-              note: 'a statement was filed in place of an entry',
-            });
-          } else if (profile.company_status === 'active') {
+
+          if (narrative.unexplained && profile.company_status === 'active') {
             observations.push({
               category: 'Ownership',
               severity: 'medium',
-              detail:
-                'No PSC entry, exemption or statement is recorded for a company the register shows as active. Ownership cannot be established from the register.',
+              detail: explanation.expired_exemptions.length
+                ? 'The company held a PSC exemption that has ended, and has filed no PSC entry or statement since. Ownership cannot be established from the register.'
+                : 'No PSC entry, exemption in force, or statement is recorded for a company the register shows as active. Ownership cannot be established from the register.',
               source: 'PSC record',
             });
-            coverage.push({
-              resource: 'Persons with significant control',
-              status: 'not-applicable',
-              note: 'nothing recorded',
-            });
-          } else {
-            coverage.push({
-              resource: 'Persons with significant control',
-              status: 'not-applicable',
-              note: 'nothing recorded',
-            });
           }
+
+          coverage.push({
+            resource: 'Persons with significant control',
+            status: 'not-applicable',
+            note: narrative.coverageNote,
+          });
         } else {
           checks.push({ check: 'Ownership (PSC)', status: 'ran' });
           if (activePSCs.length === 0 && profile.company_status === 'active') {
@@ -806,7 +803,12 @@ registerTool({
         '',
         `**Officer ID:** ${officerId}`,
         `**Appointments on the register:** ${collected.total ?? collected.items.length}`,
-        `**Current:** ${current.length}   **Past:** ${past.length}`,
+        // The split is only over what was retrieved. Printing it unqualified
+        // beside the register total invites the reading that the rest are past
+        // appointments, which is not something this call established.
+        collected.complete
+          ? `**Current:** ${current.length}   **Past:** ${past.length}`
+          : `**Retrieved ${collected.items.length} of them:** ${current.length} current, ${past.length} past. The split across the remaining ${(collected.total ?? 0) - collected.items.length} is unknown.`,
         '',
       ];
 
@@ -833,10 +835,16 @@ registerTool({
           total: collected.total,
           note: collected.complete
             ? undefined
-            : `stopped after ${collected.pagesFetched} page(s); use get_appointments with start_index to continue`,
+            : `stopped after ${collected.pagesFetched} page(s) because the page budget ran out; use get_appointments with start_index to continue`,
         },
       ];
-      if (!collected.complete) lines.push(...coverageLines(coverage));
+      if (!collected.complete) {
+        lines.push(
+          `_This is a partial list: collection stopped after ${collected.pagesFetched} page(s)._`,
+          ''
+        );
+        lines.push(...coverageLines(coverage));
+      }
 
       lines.push(
         '_Appointments are grouped by Companies House officer id. The same individual may appear under more than one id, so this may not be every appointment they hold._',

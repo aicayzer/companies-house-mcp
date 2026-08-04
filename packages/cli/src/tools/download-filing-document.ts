@@ -1,25 +1,27 @@
 /**
  * Retrieve the document behind a Companies House filing.
  *
- * The document itself is returned to the caller as an MCP embedded resource:
- * binary formats as a base64 blob, text formats as text. That is what makes
- * the tool useful over a remote transport, where the caller has no access to
- * the machine the server runs on and a filesystem path would be meaningless.
+ * The document is returned to the caller as an MCP embedded resource: binary
+ * formats as a base64 blob, text formats as text. That is what makes the tool
+ * useful over a remote transport, where the caller has no access to the machine
+ * the server runs on and a filesystem path would be meaningless.
  *
- * Writing to disk is available but must be asked for explicitly with
- * `save_to`, and only works when the server and the caller share a filesystem.
+ * The tool deliberately cannot write to disk. Document content is attacker-
+ * supplyable — anyone can incorporate a company and file a document — so a
+ * write path here would let filed text talk a model into writing a file
+ * anywhere the server process can reach. Callers that want a local copy write
+ * the returned resource themselves; the CLI's `--out` does exactly that.
  *
  * Document metadata is always read first. It reports which content types
- * Companies House actually holds for that document and how large each one is,
- * so the size limit is applied before any bytes are transferred rather than
- * after.
+ * Companies House holds for that document and how large each one is, so the
+ * size limit is applied before any bytes are transferred rather than after.
  */
 
 import { z } from 'zod';
 
 import {
   registerTool,
-  DOWNLOAD_TOOL_ANNOTATIONS,
+  TOOL_ANNOTATIONS,
   makeTextResult,
   makeResourceResult,
   makeErrorResult,
@@ -54,11 +56,19 @@ const FORMAT_EXTENSION: Record<Format, string> = {
 const TEXT_MEDIA_TYPES = ['application/xhtml+xml', 'application/xml', 'application/json', 'text/'];
 
 /**
- * Default ceiling on inline content. Base64 inflates bytes by a third and the
- * result travels through the model's context, so the default is deliberately
- * modest and the caller raises it knowingly.
+ * Default ceiling on inline content.
+ *
+ * The document travels back inside the tool result, so it lands in the
+ * caller's context window. Base64 inflates it by a third, and a megabyte of
+ * base64 is already several hundred thousand tokens — enough to wedge a
+ * conversation that then cannot recover, because the oversized result is
+ * already in its history. 128 KiB comfortably covers the routine filings
+ * (confirmation statements, officer appointments and changes) while keeping
+ * that failure out of reach. Larger documents are refused with their exact
+ * size, so raising `max_bytes` is a decision the caller makes knowing the
+ * cost.
  */
-const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = 128 * 1024;
 const ABSOLUTE_MAX_BYTES = 25 * 1024 * 1024;
 
 const shape = {
@@ -81,19 +91,13 @@ const shape = {
     .max(ABSOLUTE_MAX_BYTES)
     .default(DEFAULT_MAX_BYTES)
     .describe(
-      `Refuse to return content larger than this many bytes (default ${DEFAULT_MAX_BYTES}, hard maximum ${ABSOLUTE_MAX_BYTES}). The size is checked against the document metadata before anything is transferred.`
+      `Refuse to return content larger than this many bytes (default ${DEFAULT_MAX_BYTES}, hard maximum ${ABSOLUTE_MAX_BYTES}). Checked against the document metadata and the response length before anything is buffered.`
     ),
   metadata_only: z
     .boolean()
     .default(false)
     .describe(
       'Return only the document metadata — available formats, sizes and page count — without transferring the document.'
-    ),
-  save_to: z
-    .string()
-    .optional()
-    .describe(
-      'Optional absolute path of a file to write the document to, in addition to returning it. Only meaningful when this server runs on the same machine as the caller; a remote server writes to its own disk, which the caller cannot read. Omit it unless you know the server is local.'
     ),
 };
 const schema = z.object(shape);
@@ -132,25 +136,13 @@ function documentFilename(
   return safe.toLowerCase().endsWith(`.${extension}`) ? safe : `${safe}.${extension}`;
 }
 
-/**
- * Write bytes to disk, loading the filesystem module only when asked. The
- * shared code also runs on runtimes with no filesystem, so the import stays
- * out of the module graph until a caller opts in.
- */
-async function writeDocument(path: string, bytes: Uint8Array): Promise<void> {
-  const { writeFile, mkdir } = await import('node:fs/promises');
-  const { dirname } = await import('node:path');
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, bytes);
-}
-
 registerTool({
   name: 'download_filing_document',
   title: 'Download Filing Document',
   description:
-    'Retrieve the document filed for a Companies House filing and return it to you directly — PDF and other binary formats as an embedded binary resource, XHTML, XML and JSON as text. Reads the document metadata first, so it reports the available formats, page count and exact size, and refuses oversized content before transferring it. Get the document id from get_filings. Set metadata_only to inspect a document without retrieving it. Pass save_to only when this server runs on your own machine.',
+    'Retrieve the document filed for a Companies House filing and return it to you directly — PDF and other binary formats as an embedded binary resource, XHTML, XML and JSON as text. Reads the document metadata first, so it reports the available formats, page count and exact size, and refuses oversized content before transferring it. Get the document id from get_filings. Set metadata_only to inspect a document without retrieving it. The document is returned to you; this tool does not write files.',
   inputSchema: schema,
-  annotations: DOWNLOAD_TOOL_ANNOTATIONS,
+  annotations: TOOL_ANNOTATIONS,
   group: 'filings',
   async execute(client: APIClient, params: unknown) {
     const input = schema.parse(params);
@@ -209,69 +201,43 @@ registerTool({
         );
       }
 
-      const { bytes, contentType } = await fetchDocumentContent(
-        client,
-        documentId,
-        wantedMediaType
-      );
+      const fetched = await fetchDocumentContent(client, documentId, wantedMediaType, {
+        maxBytes: input.max_bytes,
+      });
 
-      // The metadata size is authoritative in practice, but the transfer is
-      // checked too so an unexpectedly large body can never be returned.
-      if (bytes.byteLength > input.max_bytes) {
+      if (fetched.tooLarge) {
         return makeTextResult(
-          `This document turned out to be ${bytes.byteLength.toLocaleString()} bytes, above the ${input.max_bytes.toLocaleString()}-byte limit for this call, so it was discarded. Raise max_bytes to retrieve it.`,
+          `This document is ${fetched.reportedSize !== undefined ? `${fetched.reportedSize.toLocaleString()} bytes, ` : ''}above the ${input.max_bytes.toLocaleString()}-byte limit for this call, so it was not retrieved. Raise max_bytes to retrieve it.`,
           {
             ...basePayload,
             retrieved: false,
             reason: 'too_large',
-            size_bytes: bytes.byteLength,
+            ...(fetched.reportedSize !== undefined ? { size_bytes: fetched.reportedSize } : {}),
           }
         );
       }
 
+      const { bytes, contentType } = fetched;
       const filename = documentFilename(metadata, documentId, extension);
       const uri = documentUri(documentId, extension);
-      const payload: Record<string, unknown> = {
+
+      const summary =
+        `Retrieved ${bytes.byteLength.toLocaleString()} bytes of ${contentType} for document ${documentId}` +
+        `${metadata.pages !== undefined ? ` (${metadata.pages} page(s))` : ''}. ` +
+        'The document is attached to this result as a resource.';
+
+      const resource = isTextMediaType(contentType)
+        ? { uri, mimeType: contentType, text: new TextDecoder().decode(bytes) }
+        : { uri, mimeType: contentType, blob: bytesToBase64(bytes) };
+
+      return makeResourceResult(summary, resource, {
         ...basePayload,
         retrieved: true,
         content_type: contentType,
         size_bytes: bytes.byteLength,
         filename,
         uri,
-      };
-
-      let savedTo: string | undefined;
-      if (input.save_to) {
-        try {
-          await writeDocument(input.save_to, bytes);
-          savedTo = input.save_to;
-          payload.saved_to = savedTo;
-        } catch (error) {
-          // A failed local write must not lose the document the caller asked
-          // for, so it is reported alongside the content rather than thrown.
-          payload.save_error = error instanceof Error ? error.message : String(error);
-        }
-      }
-
-      const summaryParts = [
-        `Retrieved ${bytes.byteLength.toLocaleString()} bytes of ${contentType} for document ${documentId}${
-          metadata.pages !== undefined ? ` (${metadata.pages} page(s))` : ''
-        }.`,
-        'The document is attached to this result as a resource.',
-      ];
-      if (savedTo)
-        summaryParts.push(`Also written to ${savedTo} on the machine running this tool.`);
-      if (payload.save_error) {
-        summaryParts.push(
-          `Could not write to ${input.save_to}: ${String(payload.save_error)}. The document is still attached above.`
-        );
-      }
-
-      const resource = isTextMediaType(contentType)
-        ? { uri, mimeType: contentType, text: new TextDecoder().decode(bytes) }
-        : { uri, mimeType: contentType, blob: bytesToBase64(bytes) };
-
-      return makeResourceResult(summaryParts.join(' '), resource, payload);
+      });
     } catch (err) {
       return makeErrorResult(err, {
         notFoundSuffix: 'Use get_filings to confirm the document id for this filing.',

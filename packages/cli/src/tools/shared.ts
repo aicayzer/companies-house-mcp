@@ -64,5 +64,11 @@ export const searchStartIndexSchema = z
     `Zero-based offset into the results (0–${SEARCH_MAX_START_INDEX}). Companies House search is not a bulk export; narrow the query rather than paging deeply.`
   );
 
+/**
+ * Companies House caps the total it reports for a search at this figure, so a
+ * result showing exactly this many matches is reporting a ceiling, not a count.
+ */
+export const SEARCH_TOTAL_CEILING = 10_000;
+
 /** How many pages one tool call will fetch when it needs the whole list. */
 export const MAX_AUTO_PAGES = 5;

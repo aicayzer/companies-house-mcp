@@ -131,7 +131,7 @@ CLI: `ch disqualifications`
 
 ### `get_officers`
 
-List a company's officers — directors, secretaries, LLP members and equivalents — with role, appointment date, resignation date, nationality, occupation and service address. Returns officers currently in post by default. Companies House does not offer a server-side active filter, so requesting active officers pages through the list until every active officer has been found; the response states how much of the register was read.
+List a company's officers — directors, secretaries, LLP members and equivalents — with role, appointment date, resignation date, nationality, occupation and service address. Returns officers currently in post by default. Companies House offers no general server-side filter for officers still in post, so requesting them pages through the list until every one has been found; the response states how much of the register was read.
 
 CLI: `ch officers`
 
@@ -159,7 +159,7 @@ CLI: `ch ownership`
 
 ### `download_filing_document`
 
-Retrieve the document filed for a Companies House filing and return it to you directly — PDF and other binary formats as an embedded binary resource, XHTML, XML and JSON as text. Reads the document metadata first, so it reports the available formats, page count and exact size, and refuses oversized content before transferring it. Get the document id from get_filings. Set metadata_only to inspect a document without retrieving it. Pass save_to only when this server runs on your own machine.
+Retrieve the document filed for a Companies House filing and return it to you directly — PDF and other binary formats as an embedded binary resource, XHTML, XML and JSON as text. Reads the document metadata first, so it reports the available formats, page count and exact size, and refuses oversized content before transferring it. Get the document id from get_filings. Set metadata_only to inspect a document without retrieving it. The document is returned to you; this tool does not write files.
 
 CLI: `ch document`
 
@@ -167,9 +167,8 @@ CLI: `ch document`
 |-----------|------|----------|-------------|
 | `document_id` | string | Yes | Document id from a filing. get_filings and get_filing_document report it as "Document ID". A full `links.document_metadata` URL or a `/document/{id}` path is also accepted. |
 | `format` | `pdf` \| `xhtml` \| `xml` \| `json` | No | Preferred content type. Most filings exist only as pdf; modern accounts may also be held as xhtml (iXBRL). If the requested format is not held, the response lists what is and returns nothing. Default `pdf`. |
-| `max_bytes` | number | No | Refuse to return content larger than this many bytes (default 5242880, hard maximum 26214400). The size is checked against the document metadata before anything is transferred. Default `5242880`. |
+| `max_bytes` | number | No | Refuse to return content larger than this many bytes (default 131072, hard maximum 26214400). Checked against the document metadata and the response length before anything is buffered. Default `131072`. |
 | `metadata_only` | boolean | No | Return only the document metadata — available formats, sizes and page count — without transferring the document. Default `false`. |
-| `save_to` | string | No | Optional absolute path of a file to write the document to, in addition to returning it. Only meaningful when this server runs on the same machine as the caller; a remote server writes to its own disk, which the caller cannot read. Omit it unless you know the server is local. |
 
 ### `get_filing_document`
 

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -23,12 +23,28 @@ function readConfig(): Config {
   }
 }
 
+/**
+ * Write the config file with owner-only permissions.
+ *
+ * `writeFileSync`'s `mode` applies only when the file is created, so an
+ * existing file — restored from a backup, or copied from another machine by a
+ * tool that did not preserve modes — would silently keep world-readable
+ * permissions on a credential. The explicit chmod makes the guarantee real.
+ */
+function writeConfig(config: Config): void {
+  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  try {
+    chmodSync(CONFIG_FILE, 0o600);
+  } catch {
+    // Best effort: some filesystems (and Windows) do not support it.
+  }
+}
+
 export function writeApiKey(key: string): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
   const config = readConfig();
   config.apiKey = key;
-  // Owner-only: the file holds a credential.
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  writeConfig(config);
 }
 
 /** Remove the saved key. Returns true when there was one to remove. */
@@ -37,7 +53,7 @@ export function clearApiKey(): boolean {
   const config = readConfig();
   if (!config.apiKey) return false;
   delete config.apiKey;
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  writeConfig(config);
   return true;
 }
 

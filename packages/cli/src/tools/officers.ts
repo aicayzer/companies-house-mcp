@@ -13,6 +13,7 @@ import {
   formatOfficerCounts,
   formatAppointments,
   formatPagination,
+  emptyPageText,
 } from '../formatters/index.js';
 import { collectPages } from '../api/paginate.js';
 import {
@@ -47,7 +48,7 @@ registerTool({
   name: 'get_officers',
   title: 'Get Company Officers',
   description:
-    "List a company's officers — directors, secretaries, LLP members and equivalents — with role, appointment date, resignation date, nationality, occupation and service address. Returns officers currently in post by default. Companies House does not offer a server-side active filter, so requesting active officers pages through the list until every active officer has been found; the response states how much of the register was read.",
+    "List a company's officers — directors, secretaries, LLP members and equivalents — with role, appointment date, resignation date, nationality, occupation and service address. Returns officers currently in post by default. Companies House offers no general server-side filter for officers still in post, so requesting them pages through the list until every one has been found; the response states how much of the register was read.",
   inputSchema: getOfficersSchema,
   annotations: TOOL_ANNOTATIONS,
   group: 'people',
@@ -61,14 +62,22 @@ registerTool({
           order_by: input.order_by,
         });
         const items = result.items ?? [];
+        // Companies House reports zeroed counts for an offset past the end of
+        // the list. Printing them would assert "0 on the register" about a
+        // company that may have hundreds of officers.
+        const pagedPastEnd = items.length === 0 && input.start_index > 0;
         const text = [
-          formatOfficerCounts({
-            total: result.total_results,
-            active: result.active_count,
-            resigned: result.resigned_count,
-          }),
-          '',
-          formatOfficers(items, result.total_results ?? items.length),
+          pagedPastEnd
+            ? emptyPageText('officers', input.start_index, result.total_results || undefined)
+            : [
+                formatOfficerCounts({
+                  total: result.total_results,
+                  active: result.active_count,
+                  resigned: result.resigned_count,
+                }),
+                '',
+                formatOfficers(items, result.total_results ?? items.length),
+              ].join('\n'),
           formatPagination({
             start_index: input.start_index,
             items_per_page: input.items_per_page,
@@ -180,7 +189,9 @@ registerTool({
       });
       const items = result.items ?? [];
       const text = [
-        formatAppointments(items, result.total_results ?? items.length, result.name),
+        items.length
+          ? formatAppointments(items, result.total_results ?? items.length, result.name)
+          : emptyPageText('appointments', input.start_index, result.total_results),
         formatPagination({
           start_index: input.start_index,
           items_per_page: input.items_per_page,

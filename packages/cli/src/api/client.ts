@@ -121,26 +121,24 @@ export function readRateLimitHeaders(headers: Headers, now = Date.now()): RateLi
 }
 
 /**
- * Seconds to wait after a 429, preferring what the API told us.
+ * How long Companies House says the caller must wait after a 429.
  *
  * `Retry-After` is not documented for this API, so `X-Ratelimit-Reset` (unix
- * seconds) is the primary signal. The result is clamped so a stale or absurd
- * reset value cannot stall a tool call indefinitely.
+ * seconds) is the primary signal. This is the *true* wait, unclamped — telling
+ * a caller "retry in about 30 seconds" when the window resets in four minutes
+ * would be a plain falsehood. Clamping belongs to the decision about how long
+ * to sleep, not to the number reported.
  */
-export function retryDelaySeconds(
-  headers: Headers,
-  now = Date.now(),
-  maxSeconds = MAX_RATE_LIMIT_WAIT_SECONDS
-): number | undefined {
+export function retryDelaySeconds(headers: Headers, now = Date.now()): number | undefined {
   const retryAfter = parseIntHeader(headers.get('retry-after'));
-  if (retryAfter !== undefined && retryAfter >= 0) return Math.min(retryAfter, maxSeconds);
+  if (retryAfter !== undefined && retryAfter >= 0) return retryAfter;
 
   const resetAt = parseIntHeader(headers.get('x-ratelimit-reset'));
   if (resetAt === undefined) return undefined;
 
   const seconds = Math.ceil(resetAt - now / 1000);
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
-  return Math.min(seconds, maxSeconds);
+  return seconds;
 }
 
 export class APIClient {
@@ -149,7 +147,6 @@ export class APIClient {
   private readonly rateLimiter: RateLimiter;
   private readonly cache: Cache;
   private readonly cacheEnabled: boolean;
-  private rateLimit: RateLimitSnapshot | undefined;
 
   constructor(config: ClientConfig) {
     this.baseUrl = config.base_url ?? DEFAULT_BASE_URL;
@@ -162,11 +159,6 @@ export class APIClient {
     );
     this.cache = new Cache(1000);
     this.cacheEnabled = config.cache_enabled !== false;
-  }
-
-  /** The most recent quota reading, for diagnostics. Never includes credentials. */
-  get lastRateLimit(): RateLimitSnapshot | undefined {
-    return this.rateLimit;
   }
 
   async get<T>(
@@ -215,12 +207,12 @@ export class APIClient {
       throw CompaniesHouseNetworkError.fromError(error, endpoint);
     }
 
-    this.rateLimit = readRateLimitHeaders(response.headers);
     return response;
   }
 
   private async fetchWithRetry<T>(url: URL, path: string, attempts = 3): Promise<T> {
     let lastError: Error | undefined;
+    let waitedOutRateLimit = false;
     for (let i = 0; i < attempts; i++) {
       try {
         const response = await this.fetchWithAuth(
@@ -244,15 +236,18 @@ export class APIClient {
             retryAfter
           );
 
-          // Wait out a rate limit once, when the API told us the window is
-          // about to reset. Anything longer is reported rather than hidden
-          // behind a stalled tool call.
+          // Wait out a rate limit only when the window is about to reset, and
+          // only once. A longer wait is reported with the true reset time
+          // rather than hidden behind a stalled tool call, and retrying into a
+          // window we are already over just burns more of the allowance.
           if (
             response.status === 429 &&
             retryAfter !== undefined &&
             retryAfter <= MAX_RATE_LIMIT_WAIT_SECONDS &&
+            !waitedOutRateLimit &&
             i < attempts - 1
           ) {
+            waitedOutRateLimit = true;
             lastError = error;
             await this.sleep(retryAfter * 1000 + 250);
             continue;
@@ -267,7 +262,18 @@ export class APIClient {
           throw error;
         }
 
-        return (await response.json()) as T;
+        try {
+          return (await response.json()) as T;
+        } catch {
+          // A 200 whose body is not JSON is Companies House misbehaving, not
+          // an unreachable network. Retrying would not help and the diagnosis
+          // would be wrong.
+          throw new CompaniesHouseAPIError(
+            'Companies House returned a response that could not be read as JSON.',
+            response.status,
+            path
+          );
+        }
       } catch (err) {
         if (err instanceof CompaniesHouseAPIError) throw err;
         lastError =

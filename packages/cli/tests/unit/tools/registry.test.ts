@@ -47,28 +47,27 @@ describe('Tool Registry', () => {
       expect(tool.description).toBeTruthy();
       expect(tool.group).toBeTruthy();
       expect(tool.inputSchema).toBeInstanceOf(z.ZodObject);
-      expect(tool.annotations).toEqual(
-        // The document tool can write a file when explicitly asked, so it does
-        // not claim readOnlyHint. Writing the same document twice replaces the
-        // same path, so it stays idempotent.
-        tool.name === 'download_filing_document'
-          ? {
-              readOnlyHint: false,
-              destructiveHint: false,
-              idempotentHint: true,
-              openWorldHint: true,
-            }
-          : {
-              readOnlyHint: true,
-              destructiveHint: false,
-              idempotentHint: true,
-              openWorldHint: true,
-            }
-      );
+      // Every tool only reads from Companies House. Nothing writes anywhere.
+      expect(tool.annotations).toEqual({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      });
       expect(typeof tool.execute).toBe('function');
     }
 
     expect(new Set(titles)).toHaveLength(tools.length);
+  });
+
+  it('exposes no tool that can write to the filesystem', () => {
+    // Document content is attacker-supplyable, so a write parameter would be a
+    // prompt-injection primitive. Local writes belong to the CLI.
+    const writeLike = /^(save|write|output|out|dest|path|file)_?/;
+    for (const tool of getAllTools()) {
+      const offending = Object.keys(tool.inputSchema.shape).filter(name => writeLike.test(name));
+      expect(offending, `${tool.name} exposes a write-shaped parameter`).toEqual([]);
+    }
   });
 
   it('describes every tool parameter, so generated help cannot be blank', () => {

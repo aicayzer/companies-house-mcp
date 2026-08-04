@@ -62,6 +62,8 @@ export interface PaginationState {
   items_per_page: number;
   returned: number;
   total?: number;
+  /** The highest offset this endpoint accepts, where one is enforced. */
+  max_start_index?: number;
 }
 
 /**
@@ -69,8 +71,18 @@ export interface PaginationState {
  * to ask for the next page. Without this an agent cannot tell a complete
  * answer from the first page of a long one.
  */
-export function formatPagination({ start_index, returned, total }: PaginationState): string {
+export function formatPagination({
+  start_index,
+  items_per_page,
+  returned,
+  total,
+  max_start_index,
+}: PaginationState): string {
+  // An empty page is explained by `emptyPageText` in the tool itself, which
+  // knows what kind of record is missing. Repeating it here would say the same
+  // thing twice.
   if (returned === 0) return '';
+
   const first = start_index + 1;
   const last = start_index + returned;
   if (total === undefined) {
@@ -79,7 +91,11 @@ export function formatPagination({ start_index, returned, total }: PaginationSta
   if (last >= total) {
     return `_Showing records ${first}–${last} of ${total}. This is the last page._`;
   }
-  return `_Showing records ${first}–${last} of ${total}. For the next page, call again with start_index: ${last} and the same items_per_page._`;
+  // Never suggest an offset the tool would then reject.
+  if (max_start_index !== undefined && last > max_start_index) {
+    return `_Showing records ${first}–${last} of ${total}. That is as far as this endpoint pages; narrow the query to see more._`;
+  }
+  return `_Showing records ${first}–${last} of ${total}. For the next page, call again with start_index: ${last}, items_per_page: ${items_per_page}._`;
 }
 
 export function formatCompanyStatus(status: string): string {
@@ -351,6 +367,22 @@ export function formatOfficers(items: CompanyOfficer[], total: number): string {
   return lines.join('\n');
 }
 
+/**
+ * Text for a page that came back empty.
+ *
+ * An empty page is only evidence that the register holds nothing when the
+ * caller asked from the start of the list. Past that, it means the offset is
+ * beyond the end — and saying "none found" there is a flat false negative
+ * about a company that may have hundreds of records.
+ */
+export function emptyPageText(label: string, start_index: number, total?: number): string {
+  if (start_index === 0) return `No ${label} found.`;
+  if (total !== undefined && total > 0) {
+    return `No ${label} at offset ${start_index}. This company has ${total} on the register; start again from start_index: 0.`;
+  }
+  return `No ${label} at offset ${start_index}. This is past the end of the list; try a lower start_index.`;
+}
+
 /** The document id a filing points at, if a document exists for it. */
 export function filingDocumentId(filing: FilingHistoryItem): string | undefined {
   const url = filing.links?.document_metadata;
@@ -541,7 +573,10 @@ export function formatAppointments(
   const header = name ? `${total} appointment(s) for ${name}:` : `${total} appointment(s):`;
   const lines = [header, ''];
   for (const appt of items) {
-    const status = appt.resigned_on ? '(Resigned)' : '(Active)';
+    // The status qualifies the appointment, not the company — a current
+    // appointment at a dissolved company is common and must not read as
+    // "(Active)" next to the company's name.
+    const status = appt.resigned_on ? '(appointment ended)' : '(appointment current)';
     lines.push(`### ${appt.appointed_to.company_name} ${status}`);
     lines.push(`- **Company Number:** ${appt.appointed_to.company_number}`);
     if (appt.appointed_to.company_status) {

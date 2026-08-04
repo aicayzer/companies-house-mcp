@@ -11,7 +11,7 @@ A single Worker exposing two routes:
 | Route | Auth | Purpose |
 |-------|------|---------|
 | `POST /mcp` | Bearer token | The MCP endpoint |
-| `GET /health` | None | Liveness. Reports the version and nothing about your secrets |
+| `GET /health` | None | Liveness. Reports the version and tool count, and nothing about your secrets |
 
 Anything else returns 404.
 
@@ -72,7 +72,7 @@ Confirm the names are set. This lists names only, never values:
 npx wrangler secret list
 ```
 
-Until both are set, `POST /mcp` answers `500` and names the missing secret. It never reveals a value.
+Without `MCP_BEARER_TOKEN` nothing can authenticate, so `POST /mcp` answers `503` and says nothing more — an unauthenticated caller learns nothing about how the Worker is configured. Once the token is set, an authenticated caller missing the API key gets a `500` naming that secret. Neither response ever reveals a value.
 
 ## Check it works
 
@@ -80,7 +80,7 @@ Until both are set, `POST /mcp` answers `500` and names the missing secret. It n
 curl https://<your-worker-url>/health
 ```
 
-Expect `{"status":"ok","service":"companies-house-mcp","version":"..."}`.
+Expect `{"status":"ok","service":"companies-house-mcp","version":"...","tools":18}`.
 
 Then confirm it refuses an unauthenticated call:
 
@@ -101,13 +101,16 @@ npx @modelcontextprotocol/inspector --cli https://<your-worker-url>/mcp \
 
 ## Connect Claude Code
 
-Keep the token out of your shell history and out of any file you might commit:
+Put the token in an environment variable rather than typing it into a command, so it does not end up in your shell history:
 
 ```bash
-claude mcp add --transport http companies-house https://<your-worker-url>/mcp --header "Authorization: Bearer <your-token>"
+read -rs COMPANIES_HOUSE_MCP_TOKEN && export COMPANIES_HOUSE_MCP_TOKEN
+claude mcp add --transport http companies-house https://<your-worker-url>/mcp --header "Authorization: Bearer $COMPANIES_HOUSE_MCP_TOKEN"
 ```
 
-Or, for a project checked into git, put the token in an environment variable and interpolate it in `.mcp.json`:
+`read -rs` takes the token without echoing it. Note that `claude mcp add` stores the resolved value in your Claude Code config, so that file now holds the token — keep it out of any repository.
+
+For a project checked into git, keep the token out of the config too by interpolating it in `.mcp.json`:
 
 ```json
 {
@@ -137,7 +140,7 @@ npx wrangler dev
 
 **Caching and rate limiting.** The API client keeps a short-lived response cache and queues requests to stay inside the Companies House limit of 600 requests per five minutes. Both live in the Worker's memory and reset whenever Cloudflare recycles the isolate. They are courtesies to Companies House, not guarantees — nothing depends on them surviving.
 
-**Request size.** The document tool refuses content above 5 MB by default and 25 MB at the hard maximum, checked against the document metadata before any bytes are transferred.
+**Request size.** The document tool refuses content above 128 KB by default and 25 MB at the hard maximum. The limit is checked against the document metadata and the response length before anything is buffered, so a large document cannot exhaust the isolate. The default is small because the document travels back inside the tool result and lands in the caller's context; raise `max_bytes` deliberately when you need a bigger one.
 
 **Logs.** `observability.logs` is on, so `npx wrangler tail` streams live requests and the dashboard keeps recent ones. The Worker logs error messages, HTTP status and paths. It never logs the Authorization header, the bearer token, the Companies House API key, or request bodies. If you add logging, keep it that way.
 

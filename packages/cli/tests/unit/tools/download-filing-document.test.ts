@@ -96,14 +96,14 @@ describe('download_filing_document', () => {
     it('accepts a bare document id', async () => {
       globalThis.fetch = makeFetchMock();
       await tool.execute(client, { document_id: 'ABC123' });
-      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => String(u));
       expect(calls.some(u => u.includes('/document/ABC123'))).toBe(true);
     });
 
     it('strips a /document/ path prefix', async () => {
       globalThis.fetch = makeFetchMock();
       await tool.execute(client, { document_id: '/document/ABC123' });
-      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => String(u));
       expect(calls.every(u => !u.includes('/document/document/'))).toBe(true);
     });
 
@@ -113,7 +113,7 @@ describe('download_filing_document', () => {
         document_id:
           'https://document-api.company-information.service.gov.uk/document/ABC123/content',
       });
-      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => String(u));
       expect(calls.every(u => !u.includes('/document/document/'))).toBe(true);
       expect(calls.some(u => u.endsWith('/document/ABC123'))).toBe(true);
     });
@@ -175,7 +175,7 @@ describe('download_filing_document', () => {
 
       expect(structured(result).retrieved).toBe(false);
       expect(structured(result).available_formats).toEqual(['application/pdf']);
-      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => String(u));
       expect(calls.some(u => u.includes('/content'))).toBe(false);
     });
 
@@ -202,11 +202,20 @@ describe('download_filing_document', () => {
 
       expect(structured(result).retrieved).toBe(false);
       expect(structured(result).reason).toBe('too_large');
-      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => String(u));
       expect(calls.some(u => u.includes('/content'))).toBe(false);
     });
 
-    it('discards a body that exceeds the limit despite the metadata', async () => {
+    it("defaults to a ceiling small enough not to wedge a caller's context", async () => {
+      // The document comes back inside the tool result. A default measured in
+      // megabytes would return more base64 than a context window can hold, and
+      // the caller could not recover because the result is already in history.
+      const { inputSchema } = tool;
+      const parsed = inputSchema.parse({ document_id: 'X' }) as { max_bytes: number };
+      expect(parsed.max_bytes).toBeLessThanOrEqual(256 * 1024);
+    });
+
+    it('refuses a body that exceeds the limit despite what the metadata claimed', async () => {
       globalThis.fetch = makeFetchMock({
         metadata: metadataBody({ resources: { 'application/pdf': { content_length: 1 } } }),
       });
@@ -218,38 +227,28 @@ describe('download_filing_document', () => {
     });
   });
 
-  describe('optional local save', () => {
-    it('does not touch the filesystem unless save_to is given', async () => {
+  describe('the filesystem', () => {
+    it('never writes, whatever it is asked', async () => {
       globalThis.fetch = makeFetchMock();
-      await tool.execute(client, { document_id: 'DOC010' });
+      // A caller — or text inside a filed document persuading a model — must
+      // not be able to reach a write path through this tool.
+      await tool.execute(client, {
+        document_id: 'DOC010',
+        save_to: '/tmp/should-never-be-written.pdf',
+        output: '/tmp/nope',
+      });
       expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
       expect(vi.mocked(mkdir)).not.toHaveBeenCalled();
     });
 
-    it('writes to the requested path and reports it', async () => {
+    it('ignores an unknown write-shaped parameter rather than honouring it', async () => {
       globalThis.fetch = makeFetchMock();
       const result = await tool.execute(client, {
         document_id: 'DOC011',
-        save_to: '/tmp/test-downloads/doc.pdf',
+        save_to: '/tmp/x.pdf',
       });
-
-      expect(vi.mocked(mkdir)).toHaveBeenCalledWith('/tmp/test-downloads', { recursive: true });
-      expect(vi.mocked(writeFile)).toHaveBeenCalledOnce();
-      expect(structured(result).saved_to).toBe('/tmp/test-downloads/doc.pdf');
-    });
-
-    it('still returns the document when the local write fails', async () => {
-      globalThis.fetch = makeFetchMock();
-      vi.mocked(writeFile).mockRejectedValueOnce(new Error('read-only file system'));
-
-      const result = await tool.execute(client, {
-        document_id: 'DOC012',
-        save_to: '/nowhere/doc.pdf',
-      });
-
-      expect(result.isError).toBeFalsy();
-      expect(result.content.some(block => block.type === 'resource')).toBe(true);
-      expect(String(structured(result).save_error)).toContain('read-only file system');
+      expect(structured(result)).not.toHaveProperty('saved_to');
+      expect(structured(result).retrieved).toBe(true);
     });
   });
 
@@ -259,7 +258,7 @@ describe('download_filing_document', () => {
       await tool.execute(client, { document_id: 'DOC013' });
 
       const calls = vi.mocked(globalThis.fetch).mock.calls as Array<[string, RequestInit?]>;
-      const s3Call = calls.find(([u]) => u === S3_URL);
+      const s3Call = calls.find(([u]) => String(u) === S3_URL);
       expect(s3Call).toBeDefined();
       expect(new Headers(s3Call![1]?.headers).get('Authorization')).toBeNull();
     });
@@ -269,7 +268,7 @@ describe('download_filing_document', () => {
       await tool.execute(client, { document_id: 'DOC014' });
 
       const calls = vi.mocked(globalThis.fetch).mock.calls as Array<[string, RequestInit?]>;
-      const contentCall = calls.find(([u]) => (u as string).includes('/content'));
+      const contentCall = calls.find(([u]) => String(u).includes('/content'));
       expect(new Headers(contentCall![1]?.headers).get('Authorization')).toBe(
         'Basic ' + Buffer.from('factory-supplied-key:').toString('base64')
       );
@@ -280,7 +279,7 @@ describe('download_filing_document', () => {
       const result = await tool.execute(client, { document_id: 'DOC015' });
 
       expect(result.isError).toBeFalsy();
-      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => u as string);
+      const calls = vi.mocked(globalThis.fetch).mock.calls.map(([u]) => String(u));
       expect(calls.filter(u => u === S3_URL)).toHaveLength(0);
     });
   });
