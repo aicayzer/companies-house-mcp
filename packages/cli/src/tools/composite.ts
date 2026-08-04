@@ -632,7 +632,12 @@ registerTool({
             ? ` — ${formatCompanyStatusDetail(profile.company_status_detail)}`
             : ''
         }`,
-        `**Entries to review:** ${observations.length} (${high.length} higher, ${medium.length} moderate, ${low.length} contextual)`,
+        // Deliberately not "2 higher, 3 moderate, 1 contextual". A tally in
+        // that shape reads as a scorecard, and a scorecard is what a reader
+        // compresses into a score — but these entries are not comparable and
+        // certainly not additive. Two outstanding charges on a company with
+        // nine is not half of anything.
+        `**Entries to review:** ${observations.length}. They are grouped by how much attention each warrants, and are not a score.`,
         '',
         'This summarises entries on the Companies House public register. It is not a verification, credit check or clearance decision.',
         '',

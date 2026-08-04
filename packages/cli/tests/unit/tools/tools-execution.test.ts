@@ -367,6 +367,8 @@ describe('Tool Execution (mocked)', () => {
     const forbidden = [
       /good standing/,
       /risk level/,
+      // A tally in scorecard shape is what a reader compresses into a score.
+      /\d+ higher, \d+ moderate/,
       /\bno red flags\b/,
       /\brisk[:\s]+(high|medium|low|clear)\b/,
       /appears to be (sound|safe|legitimate|in good)/,
