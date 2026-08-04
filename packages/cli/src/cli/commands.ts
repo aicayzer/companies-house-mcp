@@ -63,7 +63,10 @@ export const COMMANDS: CommandDefinition[] = [
     summary: "List one officer's appointments",
     positionals: ['officer_id'],
     aliases: { '--limit': 'items_per_page', '--start': 'start_index' },
-    examples: ['ch appointments 8Ck-Qb_pB0eqUlnHNTjuoBoUmxQ'],
+    examples: [
+      'ch search-officers "Ken Murphy"   # returns officer ids',
+      'ch appointments <officer-id>',
+    ],
   },
   {
     name: 'ownership',
@@ -133,7 +136,7 @@ export const COMMANDS: CommandDefinition[] = [
     tool: 'get_uk_establishments',
     summary: 'List UK establishments of an overseas company',
     positionals: ['company_number'],
-    examples: ['ch establishments FC013908'],
+    examples: ['ch establishments SF000612'],
   },
   {
     name: 'disqualifications',
@@ -141,7 +144,10 @@ export const COMMANDS: CommandDefinition[] = [
     summary: 'Check the disqualified directors register',
     positionals: ['officer_id'],
     aliases: { '--corporate': 'is_corporate' },
-    examples: ['ch disqualifications 8Ck-Qb_pB0eqUlnHNTjuoBoUmxQ'],
+    examples: [
+      'ch search-officers "Jane Smith"   # returns officer ids',
+      'ch disqualifications <officer-id>',
+    ],
   },
   {
     name: 'report',
@@ -163,6 +169,10 @@ export const COMMANDS: CommandDefinition[] = [
     summary: "Map an officer's appointments across companies",
     positionals: ['officer_name'],
     aliases: { '--id': 'officer_id', '--limit': 'items_per_page' },
-    examples: ['ch network "Dario Amodei"', 'ch network --id 8Ck-Qb_pB0eqUlnHNTjuoBoUmxQ'],
+    examples: [
+      'ch network "Dario Amodei"',
+      'ch search-officers "John Smith"   # then, for one of them:',
+      'ch network --id <officer-id>',
+    ],
   },
 ];

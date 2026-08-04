@@ -76,7 +76,7 @@ ch officers 00445790 --all
 **Follow one person across companies.** Search first: names are not unique, and `ch network` refuses to guess between matches.
 
 ```bash
-ch search-officers "Ken Murphy"
+ch search-officers "Ken Murphy"    # returns officer ids
 ch network --id <officer-id>
 ```
 

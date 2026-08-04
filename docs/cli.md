@@ -132,7 +132,7 @@ See who is in post, then everywhere one of them is appointed:
 
 ```bash
 ch officers 00445790
-ch search-officers "Ken Murphy"
+ch search-officers "Ken Murphy"    # returns officer ids
 ch network --id <officer-id>
 ```
 
