@@ -139,7 +139,7 @@ npx companies-house-mcp --http --host 0.0.0.0 --port 8080
 | `COMPANIES_HOUSE_API_KEY` | Yes | Your own key from developer.company-information.service.gov.uk |
 | `MCP_BEARER_TOKEN` | For any non-loopback HTTP bind | The token clients must present on `/mcp` |
 
-There is no download-directory variable. `download_filing_document` returns the document to the caller; pass `save_to` when you want a copy written to the machine running the server.
+There is no download-directory variable. `download_filing_document` returns the document to the caller and never writes files — document content is filed by third parties, so a write path there would be a way to talk an assistant into writing one. Use the CLI's `ch document --out <path>` when you want a local copy.
 
 The removed custom OAuth variables — `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, `MCP_PUBLIC_URL` — now cause startup to fail with migration guidance rather than quietly restoring an unsafe boundary.
 

@@ -90,7 +90,9 @@ ch tools                         List the MCP tools this build exposes
 | `--help`, `-h` | Show help. `ch <command> --help` for one command |
 | `--version`, `-v` | Print the version |
 
-Common per-command flags include `--limit` and `--start` for paging, `--all` on `ch officers` to include resigned officers, `--category` on `ch filings`, and `--out`, `--info` and `--format` on `ch document`. `ch <command> --help` lists them all.
+Common per-command flags include `--limit` and `--start` for paging, `--all` on `ch officers` to include resigned officers, `--category` on `ch filings`, and `--info` and `--format` on `ch document`. `ch <command> --help` lists them all.
+
+`--out <path>` on `ch document` writes the retrieved document to a file. It is a CLI flag, not a tool parameter: the MCP tool returns the document to its caller and never writes files.
 
 ## API key
 

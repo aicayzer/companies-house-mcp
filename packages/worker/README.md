@@ -46,8 +46,10 @@ Edit `name` in `wrangler.jsonc`, then log in and deploy:
 
 ```bash
 npx wrangler login
-npx wrangler deploy
+pnpm deploy
 ```
+
+`pnpm deploy` rebuilds the shared server before bundling. Running `wrangler deploy` directly bundles whatever was last built, which silently ships stale code.
 
 Wrangler prints your URL, of the form `https://<name>.<your-subdomain>.workers.dev`.
 
