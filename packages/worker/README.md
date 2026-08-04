@@ -46,10 +46,10 @@ Edit `name` in `wrangler.jsonc`, then log in and deploy:
 
 ```bash
 npx wrangler login
-pnpm deploy
+pnpm run deploy
 ```
 
-`pnpm deploy` rebuilds the shared server before bundling. Running `wrangler deploy` directly bundles whatever was last built, which silently ships stale code.
+`pnpm run deploy` rebuilds the shared server before bundling. Note the `run`: bare `pnpm deploy` is a built-in pnpm command and does something else entirely. Running `wrangler deploy` directly bundles whatever was last built, which silently ships stale code.
 
 Wrangler prints your URL, of the form `https://<name>.<your-subdomain>.workers.dev`.
 
@@ -147,6 +147,8 @@ npx wrangler dev
 **Logs.** `observability.logs` is on, so `npx wrangler tail` streams live requests and the dashboard keeps recent ones. The Worker logs error messages, HTTP status and paths. It never logs the Authorization header, the bearer token, the Companies House API key, or request bodies. If you add logging, keep it that way.
 
 **Rotating the bearer token.** Run `wrangler secret put MCP_BEARER_TOKEN` again with a new value, then update your clients. The change takes effect on the next request.
+
+**Redeploying.** Always `pnpm run deploy` rather than `wrangler deploy`, so the shared server is rebuilt first.
 
 **Taking it down.** `npx wrangler delete` removes the Worker and its secrets.
 
