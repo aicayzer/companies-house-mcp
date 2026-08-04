@@ -14,9 +14,9 @@ It holds no database, no session store and no Durable Object — the current MCP
 
 **Claude Code, Cursor and VS Code.** All three send a static bearer token on every request, which is exactly what the Worker expects.
 
-**Not Claude.ai or Claude Desktop custom connectors.** Their generally available authentication is OAuth. This project deliberately does not implement OAuth: an API-key proxy shaped like OAuth is a weaker security boundary, not a stronger one, and shipping one would misrepresent what protects your key. Anthropic has a beta static-header option for connectors, but it is gated and organisation-scoped, so no support is claimed for it here.
+**Claude.ai and Claude Desktop custom connectors, only if a beta feature has reached you.** Their generally available authentication is OAuth. This project deliberately does not implement OAuth: an API-key proxy shaped like OAuth is a weaker security boundary, not a stronger one, and shipping one would misrepresent what protects your key. Anthropic does accept fixed credentials through a **Request headers** section in the *Add custom connector* dialog, which is in beta and rolling out gradually. If you see that section, add `authorization` with the value `Bearer` followed by your token. If you do not, this Worker cannot be added there.
 
-If you need Claude Desktop, use the stdio server. It is a better fit anyway.
+Whether or not the beta has reached you, Claude Desktop can run the stdio server directly. That needs no Worker and no bearer token, and it is a better fit anyway.
 
 ## The security boundary
 

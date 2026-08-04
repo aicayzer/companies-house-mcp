@@ -149,7 +149,13 @@ You can deploy your own remote server as a Cloudflare Worker in your own account
 
 **Claude Code, Cursor and VS Code support this**, because they send a static bearer token on every request.
 
-**Claude.ai and Claude Desktop custom connectors do not.** Their generally available authentication is OAuth, which this project deliberately does not implement: an API-key proxy dressed as OAuth would be a weaker boundary, not a stronger one. Anthropic has a beta static-header option for connectors, but it is gated and organisation-scoped, so no support is claimed for it here.
+**Claude.ai and Claude Desktop custom connectors depend on a feature still in beta.** Their generally available authentication is OAuth, which this project deliberately does not implement: an API-key proxy dressed as OAuth would be a weaker boundary, not a stronger one. Anthropic does support fixed credentials through a **Request headers** section in the *Add custom connector* dialog, but it is in beta and rolling out gradually. Open that dialog and look: if the section is there, add the header name `authorization` with the value `Bearer` followed by your token, and the connector works. If it is not, use the local stdio setup above instead — it needs no bearer token and no Worker.
+
+Do not work around a missing Request headers section by deploying the Worker without a token. An unauthenticated deployment hands your API key's whole rate limit to anyone who finds the URL.
+
+### Tool result size
+
+Claude truncates large tool results — roughly 150,000 characters on Claude.ai and Claude Desktop, and 25,000 tokens in Claude Code unless `MAX_MCP_OUTPUT_TOKENS` is raised. Documents travel back base64-encoded, which costs about a third more than the file itself, so `download_filing_document` at its 128 KB default can produce a result larger than a Claude client will accept. For those clients, pass a smaller `max_bytes` — around 100,000 is comfortable — or fetch the document with the CLI's `ch document --out <path>` and work from the file.
 
 ## Protocol
 

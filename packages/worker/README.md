@@ -19,7 +19,7 @@ Anything else returns 404.
 
 **Claude Code is the supported client.** It sends a static bearer token on every request, which is what this Worker expects. Cursor and VS Code configure the same way.
 
-**Claude.ai and Claude Desktop custom connectors are not supported.** Their generally available authentication is OAuth, which this Worker deliberately does not implement — an API-key proxy dressed as OAuth would be a worse security boundary, not a better one. Anthropic has a beta static-header option for connectors, but it is gated and organisation-scoped, so this project does not claim it works.
+**Claude.ai and Claude Desktop custom connectors depend on a beta feature.** Their generally available authentication is OAuth, which this Worker deliberately does not implement — an API-key proxy dressed as OAuth would be a worse security boundary, not a better one. Anthropic does accept fixed credentials through a **Request headers** section in the *Add custom connector* dialog, which is in beta and rolling out gradually. Where it is available, `authorization` set to `Bearer <token>` connects this Worker. Where it is not, run the stdio server in Claude Desktop instead.
 
 ## Before you start
 

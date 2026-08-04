@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## companies-house-cli [2.0.0] / companies-house-mcp [4.0.0] — Unreleased
+## companies-house-cli [2.0.0] / companies-house-mcp [4.0.0] — 2026-08-04
 
 ### Added
 - **Honest coverage reporting** — `company_report` and `due_diligence_check` state what they retrieved, what they could not retrieve, and what the public register cannot establish. `get_officers` reports the API's own active and resigned totals.
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Due-diligence output is a summary, not a verdict** — `due_diligence_check` reports observations drawn from filed data, the checks it ran and the checks it could not run. The `CLEAR` risk level and the "appears to be in good standing" conclusion are gone, along with the `risk_level` and `flags` fields, replaced by `observations`, `observation_counts`, `checks_performed` and `coverage`.
-- **Documents come back to the caller** — `download_filing_document` returns the document as an MCP embedded resource rather than a filesystem path on the server. Writing to disk is now opt-in through `save_to`; `return_as`, `save_dir` and `COMPANIES_HOUSE_DOWNLOAD_DIR` are removed.
+- **Documents come back to the caller** — `download_filing_document` returns the document as an MCP embedded resource rather than a filesystem path on the server. The tool has no write path at all: document content is filed by third parties, so a write parameter there would be a way to talk an assistant into creating a file. `return_as`, `save_dir` and `COMPANIES_HOUSE_DOWNLOAD_DIR` are removed. Use the CLI's `ch document --out <path>` for a local copy.
 - **Counts come from the API, not from a page** — outstanding charges use the aggregate satisfied and part-satisfied totals, and officer counts use `active_count` and `resigned_count`, so they stay correct for companies with more records than fit in one request.
 - **Deprecated profile fields retired** — company records read the `links` sub-resources and `accounts.next_accounts.overdue` instead of `has_charges`, `has_insolvency_history` and `accounts.overdue`, and describe recorded charges as history rather than current encumbrance.
 - **`company_status_detail` is surfaced**, so a company that is active with a proposal to strike off is no longer reported as simply active.

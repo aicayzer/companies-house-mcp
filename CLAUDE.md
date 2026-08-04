@@ -79,4 +79,4 @@ UPDATE_DOCS=1 pnpm test:unit
 - Commit an API key or bearer token. `.dev.vars` is gitignored; keep it that way.
 - Log, echo or return a credential — not in errors, diagnostics, tests or examples.
 - Present the Worker as anything other than a private single-user deployment.
-- Claim Claude.ai or Claude Desktop custom connector support. Their generally available authentication is OAuth, which this project does not implement.
+- Claim unconditional Claude.ai or Claude Desktop custom connector support. Their generally available authentication is OAuth, which this project does not implement. Fixed credentials work only where Anthropic's beta *Request headers* option has reached the user, so describe that as conditional and always give the stdio route as the alternative.
