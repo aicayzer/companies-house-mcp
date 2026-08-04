@@ -39,11 +39,16 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
-      - name: TypeScript check
-        run: pnpm typecheck
-
+      # Build before type checking. The Worker imports the CLI through its
+      # published subpath exports, so it type checks against the CLI's emitted
+      # declarations rather than its source — which means those declarations
+      # have to exist. Checking against them is the point: it is what catches a
+      # broken export map.
       - name: Build
         run: pnpm build
+
+      - name: TypeScript check
+        run: pnpm typecheck
 
       - name: Build documentation
         run: pnpm docs:build

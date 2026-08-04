@@ -37,11 +37,13 @@ jobs:
       - name: Run linting
         run: pnpm lint
 
-      - name: TypeScript check
-        run: pnpm typecheck
-
+      # Build first: the Worker type checks against the CLI's emitted
+      # declarations, so they have to exist before `typecheck` runs.
       - name: Build
         run: pnpm build
+
+      - name: TypeScript check
+        run: pnpm typecheck
 
       - name: Test packaged stdio entry points
         run: pnpm test:package
