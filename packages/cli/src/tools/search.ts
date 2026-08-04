@@ -1,41 +1,75 @@
 import { z } from 'zod';
 import { registerTool, TOOL_ANNOTATIONS, makeTextResult, makeErrorResult } from './registry.js';
-import { searchCompanies, advancedSearchCompanies, searchOfficers } from '../api/endpoints/search.js';
-import { formatCompanySearchResults, formatOfficerSearchResults, formatAddress } from '../formatters/index.js';
+import {
+  searchCompanies,
+  advancedSearchCompanies,
+  searchOfficers,
+} from '../api/endpoints/search.js';
+import {
+  formatCompanySearchResults,
+  formatOfficerSearchResults,
+  formatAddress,
+  formatPagination,
+  emptyPageText,
+} from '../formatters/index.js';
+import {
+  pageSizeSchema,
+  searchStartIndexSchema,
+  SEARCH_MAX_START_INDEX,
+  SEARCH_TOTAL_CEILING,
+} from './shared.js';
 import type { APIClient } from '../api/client.js';
 import type { CompanySearchResponse } from '../types/index.js';
 
 // ── search_companies ────────────────────────────────────────────────────
 const searchCompaniesShape = {
-  query: z.string().describe('Company name or number to search for'),
-  items_per_page: z.number().min(1).max(100).default(20).describe('Results per page (max 100)'),
-  start_index: z.number().min(0).default(0).describe('Pagination offset'),
-  company_status: z.string().optional().describe('Filter by status: active, dissolved, liquidation, receivership, etc.'),
-  company_type: z.string().optional().describe('Filter by type: ltd, plc, llp, etc.'),
-  incorporated_from: z.string().optional().describe('Incorporation date from (YYYY-MM-DD)'),
-  incorporated_to: z.string().optional().describe('Incorporation date to (YYYY-MM-DD)'),
-  location: z.string().optional().describe('Filter by registered office location'),
-  sic_codes: z.string().optional().describe('Filter by SIC code(s), comma-separated'),
+  query: z.string().min(1).describe('Company name, or part of one. Also accepts a company number.'),
+  items_per_page: pageSizeSchema(20),
+  start_index: searchStartIndexSchema,
+  company_status: z
+    .string()
+    .optional()
+    .describe(
+      'Restrict to a register status: active, dissolved, liquidation, receivership, administration, voluntary-arrangement, converted-closed, insolvency-proceedings.'
+    ),
+  company_type: z
+    .string()
+    .optional()
+    .describe('Restrict to a company type: ltd, plc, llp, and so on.'),
+  incorporated_from: z.string().optional().describe('Earliest incorporation date, YYYY-MM-DD.'),
+  incorporated_to: z.string().optional().describe('Latest incorporation date, YYYY-MM-DD.'),
+  location: z.string().optional().describe('Restrict to a registered office location.'),
+  sic_codes: z.string().optional().describe('Restrict to SIC code(s), comma-separated.'),
 };
 const searchCompaniesSchema = z.object(searchCompaniesShape);
 
 registerTool({
   name: 'search_companies',
+  title: 'Search Companies',
   description:
-    'Search for UK companies by name. Supports optional filters for status, type, incorporation date, location, and SIC codes. When filters are provided, uses the advanced search endpoint for more precise results.',
-  inputSchema: searchCompaniesShape,
+    'Find UK companies by name and return their company numbers. Supplying any of the status, type, incorporation date, location or SIC filters switches to the advanced search endpoint. This is a name lookup, not a bulk export: narrow the query rather than paging deeply.',
+  inputSchema: searchCompaniesSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'search',
   async execute(client: APIClient, params: unknown) {
     const input = searchCompaniesSchema.parse(params);
-    const hasAdvancedFilters =
-      input.company_status || input.company_type || input.incorporated_from ||
-      input.incorporated_to || input.location || input.sic_codes;
+    const hasAdvancedFilters = Boolean(
+      input.company_status ||
+      input.company_type ||
+      input.incorporated_from ||
+      input.incorporated_to ||
+      input.location ||
+      input.sic_codes
+    );
 
     try {
+      let result: CompanySearchResponse;
+      let raw: Record<string, unknown>;
+
       if (hasAdvancedFilters) {
-        // Advanced search returns different field names than basic search.
-        // Normalise to match CompanySearchResponse/CompanySearchItem shape.
-        const raw = await advancedSearchCompanies(client, {
+        // Advanced search returns different field names to basic search.
+        // Normalise to the basic shape so callers see one contract.
+        const advanced = await advancedSearchCompanies(client, {
           company_name_includes: input.query,
           company_status: input.company_status,
           company_type: input.company_type,
@@ -46,52 +80,80 @@ registerTool({
           items_per_page: input.items_per_page,
           start_index: input.start_index,
         });
-        const rawAny = raw as unknown as Record<string, unknown>;
-        const totalResults = (rawAny.hits as number | undefined) ?? raw.total_results ?? 0;
-        const items = (raw.items ?? []).map((item) => {
-          const itemAny = item as unknown as Record<string, unknown>;
+        raw = advanced as unknown as Record<string, unknown>;
+        const totalResults = (raw.hits as number | undefined) ?? advanced.total_results ?? 0;
+        const items = (advanced.items ?? []).map(item => {
+          const itemRecord = item as unknown as Record<string, unknown>;
           return {
             ...item,
-            title: item.title || (itemAny.company_name as string) || 'Unknown',
-            address_snippet: item.address_snippet || formatAddress(itemAny.registered_office_address as Record<string, string> | undefined),
+            title: item.title || (itemRecord.company_name as string) || 'Unknown',
+            address_snippet:
+              item.address_snippet ||
+              formatAddress(
+                itemRecord.registered_office_address as Record<string, string> | undefined
+              ),
           };
         });
-        const result: CompanySearchResponse = { ...raw, items, total_results: totalResults };
-        return makeTextResult(
-          formatCompanySearchResults(result.items, result.total_results),
-          rawAny
-        );
+        result = { ...advanced, items, total_results: totalResults };
+      } else {
+        const basic = await searchCompanies(client, {
+          q: input.query,
+          items_per_page: input.items_per_page,
+          start_index: input.start_index,
+        });
+        raw = basic as unknown as Record<string, unknown>;
+        result = basic;
       }
 
-      const result = await searchCompanies(client, {
-        q: input.query,
-        items_per_page: input.items_per_page,
-        start_index: input.start_index,
+      const items = result.items ?? [];
+      const text = [
+        items.length
+          ? formatCompanySearchResults(items, result.total_results ?? 0)
+          : emptyPageText('companies', input.start_index, result.total_results),
+        formatPagination({
+          start_index: input.start_index,
+          items_per_page: input.items_per_page,
+          returned: items.length,
+          total: result.total_results,
+          max_start_index: SEARCH_MAX_START_INDEX,
+        }),
+        // Companies House caps the reported total, so a round 10,000 is a
+        // ceiling rather than a count.
+        (result.total_results ?? 0) >= SEARCH_TOTAL_CEILING
+          ? `_Companies House caps reported search totals at ${SEARCH_TOTAL_CEILING}; the real number of matches may be higher. Narrow the query._`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      return makeTextResult(text, {
+        ...raw,
+        items,
+        total_results: result.total_results,
+        search_mode: hasAdvancedFilters ? 'advanced' : 'basic',
       });
-      return makeTextResult(
-        formatCompanySearchResults(result.items ?? [], result.total_results ?? 0),
-        result as unknown as Record<string, unknown>
-      );
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── search_officers ─────────────────────────────────────────────────────
 const searchOfficersShape = {
-  query: z.string().describe('Officer name to search for'),
-  items_per_page: z.number().min(1).max(100).default(20).describe('Results per page (max 100)'),
-  start_index: z.number().min(0).default(0).describe('Pagination offset'),
+  query: z.string().min(1).describe('Officer name, or part of one.'),
+  items_per_page: pageSizeSchema(20),
+  start_index: searchStartIndexSchema,
 };
 const searchOfficersSchema = z.object(searchOfficersShape);
 
 registerTool({
   name: 'search_officers',
+  title: 'Search Officers',
   description:
-    'Search for company officers (directors, secretaries) by name across all UK companies. Returns name, address, appointment count, date of birth, and officer ID for use with get_appointments.',
-  inputSchema: searchOfficersShape,
+    'Find company officers by name across the whole UK register. Returns each match with its officer id, service address, month and year of birth where published, and total appointment count. Use the officer id with get_appointments or officer_network. Names are not unique — check the birth date and address before treating two results as the same person.',
+  inputSchema: searchOfficersSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'search',
   async execute(client: APIClient, params: unknown) {
     const input = searchOfficersSchema.parse(params);
     try {
@@ -100,12 +162,28 @@ registerTool({
         items_per_page: input.items_per_page,
         start_index: input.start_index,
       });
-      return makeTextResult(
-        formatOfficerSearchResults(result.items ?? [], result.total_results ?? 0),
-        result as unknown as Record<string, unknown>
-      );
+      const items = result.items ?? [];
+      const text = [
+        items.length
+          ? formatOfficerSearchResults(items, result.total_results ?? 0)
+          : emptyPageText('officers', input.start_index, result.total_results),
+        formatPagination({
+          start_index: input.start_index,
+          items_per_page: input.items_per_page,
+          returned: items.length,
+          total: result.total_results,
+          max_start_index: SEARCH_MAX_START_INDEX,
+        }),
+        (result.total_results ?? 0) >= SEARCH_TOTAL_CEILING
+          ? `_Companies House caps reported search totals at ${SEARCH_TOTAL_CEILING}; the real number of matches may be higher. Narrow the query._`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      return makeTextResult(text, result as unknown as Record<string, unknown>);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });

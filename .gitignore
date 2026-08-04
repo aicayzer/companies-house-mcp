@@ -16,6 +16,12 @@ docs/.vitepress/cache/
 .env
 .env.local
 
+# Cloudflare Worker local secrets and build state
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.wrangler/
+
 # MCP publisher auth tokens
 .mcpregistry_*
 

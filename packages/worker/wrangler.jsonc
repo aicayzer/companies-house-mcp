@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "companies-house-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-03",
+  // No compatibility flags. The shared server code is deliberately
+  // runtime-neutral — web-standard APIs only, no Node built-ins — so the
+  // Worker needs no Node compatibility layer and no filesystem shim.
+  "observability": {
+    "logs": { "enabled": true }
+  },
+  // Secrets are set with `wrangler secret put` and are never listed here:
+  // COMPANIES_HOUSE_API_KEY and MCP_BEARER_TOKEN.
+  "vars": {}
+}

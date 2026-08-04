@@ -1,62 +1,219 @@
 import { z } from 'zod';
-import { registerTool, TOOL_ANNOTATIONS, makeTextResult, makeErrorResult } from './registry.js';
+import {
+  registerTool,
+  TOOL_ANNOTATIONS,
+  makeTextResult,
+  makeErrorResult,
+  coverageLines,
+  type CoverageEntry,
+} from './registry.js';
 import { getCompanyOfficers, getOfficerAppointments } from '../api/endpoints/officers.js';
-import { formatOfficers, formatAppointments } from '../formatters/index.js';
+import {
+  formatOfficers,
+  formatOfficerCounts,
+  formatAppointments,
+  formatPagination,
+  emptyPageText,
+} from '../formatters/index.js';
+import { collectPages } from '../api/paginate.js';
+import {
+  companyNumberSchema,
+  officerIdSchema,
+  pageSizeSchema,
+  startIndexSchema,
+  MAX_AUTO_PAGES,
+} from './shared.js';
 import type { APIClient } from '../api/client.js';
+import type { CompanyOfficer, OfficersList } from '../types/index.js';
+
+/**
+ * Companies House answers an offset past the end of a list with an empty page
+ * *and* zeroed counts. Reporting those counts asserts "0 on the register"
+ * about a company that may have hundreds of officers, so both branches of
+ * `get_officers` bail out here instead.
+ */
+function pagedPastEnd(returned: number, startIndex: number): boolean {
+  return returned === 0 && startIndex > 0;
+}
+
+function pastEndResult(startIndex: number, list: OfficersList | undefined) {
+  // The zeroed counts are an artefact of the offset, not facts about the
+  // company, so they are not passed through to the structured payload either.
+  return makeTextResult(emptyPageText('officers', startIndex), {
+    items: [],
+    returned_count: 0,
+    start_index: startIndex,
+    ...(list?.links ? { links: list.links } : {}),
+    coverage: {
+      complete: false,
+      reason: 'start_index is past the end of the list',
+    },
+  });
+}
 
 // ── get_officers ────────────────────────────────────────────────────────
 const getOfficersShape = {
-  company_number: z.string().describe('Companies House company number'),
-  include_resigned: z.boolean().default(false).describe('Include resigned officers (default: active only)'),
-  items_per_page: z.number().min(1).max(100).default(50).describe('Results per page'),
-  start_index: z.number().min(0).default(0).describe('Pagination offset'),
+  company_number: companyNumberSchema,
+  include_resigned: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Include officers who have resigned. Default false returns only officers currently in post.'
+    ),
+  items_per_page: pageSizeSchema(50),
+  start_index: startIndexSchema,
+  order_by: z
+    .enum(['appointed_on', 'resigned_on', 'surname'])
+    .optional()
+    .describe('Sort order applied by Companies House.'),
 };
 const getOfficersSchema = z.object(getOfficersShape);
 
 registerTool({
   name: 'get_officers',
+  title: 'Get Company Officers',
   description:
-    'Get the officers (directors, secretaries) of a UK company. By default returns active officers only. Set include_resigned=true to see all officers including those who have resigned.',
-  inputSchema: getOfficersShape,
+    "List a company's officers — directors, secretaries, LLP members and equivalents — with role, appointment date, resignation date, nationality, occupation and service address. Returns officers currently in post by default. Companies House offers no general server-side filter for officers still in post, so requesting them pages through the list until every one has been found; the response states how much of the register was read.",
+  inputSchema: getOfficersSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'people',
   async execute(client: APIClient, params: unknown) {
     const input = getOfficersSchema.parse(params);
     try {
-      const result = await getCompanyOfficers(client, input.company_number, {
-        items_per_page: input.items_per_page,
-        start_index: input.start_index,
-      });
-      let items = result.items ?? [];
-      if (!input.include_resigned) {
-        items = items.filter(o => !o.resigned_on);
-      }
-      return makeTextResult(
-        formatOfficers(items, input.include_resigned ? (result.total_results ?? items.length) : items.length),
-        {
-          ...result as unknown as Record<string, unknown>,
+      if (input.include_resigned) {
+        const result = await getCompanyOfficers(client, input.company_number, {
+          items_per_page: input.items_per_page,
+          start_index: input.start_index,
+          order_by: input.order_by,
+        });
+        const items = result.items ?? [];
+        if (pagedPastEnd(items.length, input.start_index)) {
+          return pastEndResult(input.start_index, result);
+        }
+
+        const text = [
+          formatOfficerCounts({
+            total: result.total_results,
+            active: result.active_count,
+            resigned: result.resigned_count,
+          }),
+          '',
+          formatOfficers(items, result.total_results ?? items.length),
+          formatPagination({
+            start_index: input.start_index,
+            items_per_page: input.items_per_page,
+            returned: items.length,
+            total: result.total_results,
+          }),
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        return makeTextResult(text, {
+          ...(result as unknown as Record<string, unknown>),
           items,
+          coverage: { complete: items.length >= (result.total_results ?? 0) - input.start_index },
+        });
+      }
+
+      // Active-only: a single page can legitimately contain no active officers
+      // for a company with a long resignation history, so pages are collected
+      // until every officer the API counts as active has been seen.
+      let listMeta: OfficersList | undefined;
+      const collected = await collectPages<CompanyOfficer>(
+        async (startIndex, itemsPerPage) => {
+          const page = await getCompanyOfficers(client, input.company_number, {
+            items_per_page: itemsPerPage,
+            start_index: startIndex,
+            order_by: input.order_by,
+          });
+          listMeta ??= page;
+          return { items: page.items ?? [], total: page.total_results };
+        },
+        {
+          pageSize: input.items_per_page,
+          maxPages: MAX_AUTO_PAGES,
+          startIndex: input.start_index,
+          isSatisfied: items =>
+            listMeta?.active_count !== undefined &&
+            items.filter(officer => !officer.resigned_on).length >= listMeta.active_count,
         }
       );
+
+      if (pagedPastEnd(collected.items.length, input.start_index)) {
+        return pastEndResult(input.start_index, listMeta);
+      }
+
+      const active = collected.items.filter(officer => !officer.resigned_on);
+      const expectedActive = listMeta?.active_count;
+      const foundAll = expectedActive === undefined || active.length >= expectedActive;
+
+      // Why collection stopped decides what advice helps. Paging further only
+      // helps when the page budget ran out; if the list was exhausted, the
+      // remaining active officers are at *lower* offsets, and telling the
+      // caller to raise start_index sends them the wrong way.
+      const ranOutOfBudget = collected.stoppedBecause === 'page-budget';
+      const coverage: CoverageEntry[] = [
+        {
+          resource: 'Officers',
+          status: foundAll ? 'complete' : 'partial',
+          retrieved: collected.items.length,
+          total: collected.total,
+          note: foundAll
+            ? undefined
+            : ranOutOfBudget
+              ? `stopped after ${collected.pagesFetched} page(s) because the page budget ran out; ${active.length} of ${expectedActive} officers in post found. Continue with start_index: ${input.start_index + collected.items.length}, or use include_resigned to page through the full list.`
+              : `read the list from offset ${input.start_index} to its end and found ${active.length} of ${expectedActive} officers in post; the rest are at a lower offset. Call again with start_index: 0.`,
+        },
+      ];
+
+      const text = [
+        formatOfficerCounts({
+          total: listMeta?.total_results,
+          active: expectedActive,
+          resigned: listMeta?.resigned_count,
+        }),
+        '',
+        active.length
+          ? formatOfficers(active, active.length)
+          : `None of the ${collected.items.length} officer record(s) read are currently in post.`,
+        ...(foundAll ? [] : coverageLines(coverage)),
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      return makeTextResult(text, {
+        ...(listMeta ? (listMeta as unknown as Record<string, unknown>) : {}),
+        items: active,
+        returned_count: active.length,
+        coverage: {
+          complete: foundAll,
+          pages_fetched: collected.pagesFetched,
+          officers_read: collected.items.length,
+        },
+      });
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── get_appointments ────────────────────────────────────────────────────
 const getAppointmentsShape = {
-  officer_id: z.string().describe('Officer ID (from search_officers or get_officers links)'),
-  items_per_page: z.number().min(1).max(100).default(50).describe('Results per page'),
-  start_index: z.number().min(0).default(0).describe('Pagination offset'),
+  officer_id: officerIdSchema,
+  items_per_page: pageSizeSchema(50),
+  start_index: startIndexSchema,
 };
 const getAppointmentsSchema = z.object(getAppointmentsShape);
 
 registerTool({
   name: 'get_appointments',
+  title: 'Get Officer Appointments',
   description:
-    'Get all company appointments for a specific officer. Shows every company where this person is or was a director/secretary. Use the officer ID from search_officers or from officer links in get_officers.',
-  inputSchema: getAppointmentsShape,
+    'List every company appointment held by one officer id, current and past, with the company name, number, status, role and dates. An officer id identifies one person as recorded by Companies House; the same individual can hold more than one id if their details were filed differently. Use search_officers to obtain the id.',
+  inputSchema: getAppointmentsSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'people',
   async execute(client: APIClient, params: unknown) {
     const input = getAppointmentsSchema.parse(params);
     try {
@@ -64,12 +221,26 @@ registerTool({
         items_per_page: input.items_per_page,
         start_index: input.start_index,
       });
-      return makeTextResult(
-        formatAppointments(result.items ?? [], result.total_results ?? 0, result.name),
-        result as unknown as Record<string, unknown>
-      );
+      const items = result.items ?? [];
+      const text = [
+        items.length
+          ? formatAppointments(items, result.total_results ?? items.length, result.name)
+          : emptyPageText('appointments', input.start_index, result.total_results),
+        formatPagination({
+          start_index: input.start_index,
+          items_per_page: input.items_per_page,
+          returned: items.length,
+          total: result.total_results,
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      return makeTextResult(text, result as unknown as Record<string, unknown>);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err, {
+        notFoundSuffix: 'Use search_officers to confirm the officer id.',
+      });
     }
   },
 });

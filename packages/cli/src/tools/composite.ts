@@ -1,5 +1,23 @@
+/**
+ * Tools that combine several register requests into one answer.
+ *
+ * These read as assessments, so they carry the heaviest truthfulness burden in
+ * the product. Every output here states what was retrieved, what was not, and
+ * what the public register cannot establish. Nothing in this file may present
+ * an absence of adverse records as a clearance.
+ */
+
 import { z } from 'zod';
-import { registerTool, TOOL_ANNOTATIONS, makeTextResult, makeErrorResult } from './registry.js';
+import {
+  registerTool,
+  TOOL_ANNOTATIONS,
+  makeTextResult,
+  makeErrorResult,
+  coverageLines,
+  limitationLines,
+  isNotFound,
+  type CoverageEntry,
+} from './registry.js';
 import { getCompanyProfile } from '../api/endpoints/company.js';
 import { getCompanyOfficers, getOfficerAppointments } from '../api/endpoints/officers.js';
 import { getPersonsWithSignificantControl } from '../api/endpoints/psc.js';
@@ -10,430 +28,848 @@ import { searchOfficers } from '../api/endpoints/search.js';
 import {
   formatCompanyProfile,
   formatOfficers,
+  formatOfficerCounts,
   formatPSCs,
   formatCharges,
+  formatChargeCounts,
+  chargeCounts,
   formatInsolvency,
   formatFilings,
   formatCompanyStatus,
+  formatCompanyStatusDetail,
   formatDate,
   formatAppointments,
   formatOfficerSearchResults,
+  formatPagination,
+  accountsOverdue,
 } from '../formatters/index.js';
+import { explainAbsentPSCs } from './ownership.js';
+import { describeAbsentPSCs } from './psc-explanation.js';
+import { collectPages } from '../api/paginate.js';
+import { companyNumberSchema, officerIdSchema, pageSizeSchema, MAX_AUTO_PAGES } from './shared.js';
 import type { APIClient } from '../api/client.js';
+import type { CompanyProfile, OfficerAppointment } from '../types/index.js';
+
+const OFFICERS_PAGE = 50;
+const PSC_PAGE = 50;
+const CHARGES_PAGE = 100;
+const FILINGS_PAGE = 10;
+
+/** Sub-resources Companies House only exposes when the profile links to them. */
+function hasLink(profile: CompanyProfile, key: string): boolean {
+  return Boolean(profile.links?.[key]);
+}
 
 // ── company_report ──────────────────────────────────────────────────────
-const reportShape = {
-  company_number: z.string().describe('Companies House company number'),
-};
-const reportSchema = z.object(reportShape);
+const reportSchema = z.object({ company_number: companyNumberSchema });
 
 registerTool({
   name: 'company_report',
+  title: 'Company Report',
   description:
-    'Generate a comprehensive company report in a single call. Returns: full profile, active officers, PSCs/ownership, outstanding charges, recent filings (last 10), and insolvency status. This is the recommended starting point for any company research — one tool call instead of six.',
-  inputSchema: reportShape,
+    'Read the main Companies House records for one company in a single call: profile, officers currently in post, persons with significant control, charges, the most recent filings and any insolvency record. The report states how much of each list it retrieved and what the register does not cover. Use this as the starting point for company research, then use the individual tools for anything the report shows is incomplete.',
+  inputSchema: reportSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'summaries',
   async execute(client: APIClient, params: unknown) {
     const { company_number } = reportSchema.parse(params);
 
     try {
-      const [profile, officers, pscs, charges, filings, insolvency] = await Promise.allSettled([
-        getCompanyProfile(client, company_number),
-        getCompanyOfficers(client, company_number, { items_per_page: 50 }),
-        getPersonsWithSignificantControl(client, company_number, { items_per_page: 25 }),
-        getCompanyCharges(client, company_number, { items_per_page: 25 }),
-        getFilingHistory(client, company_number, { items_per_page: 10 }),
-        getCompanyInsolvency(client, company_number),
+      let profile: CompanyProfile;
+      try {
+        profile = await getCompanyProfile(client, company_number);
+      } catch (error) {
+        return makeErrorResult(error, {
+          prefix: 'Could not read the company profile:',
+          notFoundSuffix: 'Use search_companies to find the correct company number.',
+        });
+      }
+
+      // Charges and insolvency only exist when the profile links to them.
+      // Checking first avoids reporting an expected absence as a failure.
+      const [officers, pscs, charges, filings, insolvency] = await Promise.allSettled([
+        getCompanyOfficers(client, company_number, { items_per_page: OFFICERS_PAGE }),
+        getPersonsWithSignificantControl(client, company_number, { items_per_page: PSC_PAGE }),
+        hasLink(profile, 'charges')
+          ? getCompanyCharges(client, company_number, { items_per_page: CHARGES_PAGE })
+          : Promise.resolve(null),
+        getFilingHistory(client, company_number, { items_per_page: FILINGS_PAGE }),
+        hasLink(profile, 'insolvency')
+          ? getCompanyInsolvency(client, company_number)
+          : Promise.resolve(null),
       ]);
 
-      if (profile.status === 'rejected') {
-        return makeErrorResult(
-          `Could not fetch company profile: ${profile.reason?.message ?? 'Unknown error'}. Try search_companies to find the correct company number.`
-        );
-      }
+      const sections: string[] = [formatCompanyProfile(profile)];
+      const structured: Record<string, unknown> = { profile };
+      const coverage: CoverageEntry[] = [];
 
-      const sections: string[] = [];
-      const structured: Record<string, unknown> = {};
-
-      // Profile
-      sections.push(formatCompanyProfile(profile.value));
-      structured.profile = profile.value;
-
-      // Officers
+      // ---- Officers
+      sections.push('\n---\n## Officers currently in post\n');
       if (officers.status === 'fulfilled') {
-        const activeOfficers = (officers.value.items ?? []).filter(o => !o.resigned_on);
-        sections.push('\n---\n## Active Officers\n');
-        sections.push(formatOfficers(activeOfficers, activeOfficers.length));
-        structured.officers = officers.value;
+        const list = officers.value;
+        const all = list.items ?? [];
+        const active = all.filter(officer => !officer.resigned_on);
+        const expectedActive = list.active_count;
+        const complete = expectedActive === undefined || active.length >= expectedActive;
+
+        sections.push(
+          formatOfficerCounts({
+            total: list.total_results,
+            active: expectedActive,
+            resigned: list.resigned_count,
+          }),
+          '',
+          formatOfficers(active, active.length)
+        );
+        if (!complete) {
+          sections.push(
+            `_Only ${active.length} of ${expectedActive} officers currently in post appear in the first ${OFFICERS_PAGE} records. Use get_officers for the full list._\n`
+          );
+        }
+        structured.officers = { ...list, active_officers: active };
+        // Two different questions: did we see every officer record, and did we
+        // see every officer still in post? Only the first justifies "all
+        // records retrieved" next to a record count.
+        const readEveryRecord = all.length >= (list.total_results ?? all.length);
+        coverage.push({
+          resource: 'Officers',
+          status: readEveryRecord ? 'complete' : 'partial',
+          retrieved: all.length,
+          total: list.total_results,
+          note: readEveryRecord
+            ? undefined
+            : complete
+              ? `every officer in post is included; the remaining records are resigned officers — use get_officers with include_resigned for those`
+              : 'use get_officers to page through the rest',
+        });
       } else {
-        sections.push('\n---\n## Officers\n*Could not retrieve officer data.*');
+        sections.push('Officer records could not be retrieved for this request.');
+        coverage.push({ resource: 'Officers', status: 'unavailable', note: 'request failed' });
       }
 
-      // PSCs
+      // ---- Ownership
+      sections.push('\n---\n## Ownership (persons with significant control)\n');
       if (pscs.status === 'fulfilled') {
-        sections.push('\n---\n## Ownership (PSCs)\n');
-        sections.push(formatPSCs(pscs.value.items ?? [], pscs.value.total_results ?? 0));
-        structured.pscs = pscs.value;
-      } else {
-        sections.push('\n---\n## Ownership\n*No PSC data available.*');
-      }
-
-      // Charges
-      if (charges.status === 'fulfilled') {
-        const outstanding = (charges.value.items ?? []).filter(c => c.status !== 'fully-satisfied');
-        sections.push('\n---\n## Outstanding Charges\n');
-        if (outstanding.length > 0) {
-          sections.push(formatCharges(outstanding, outstanding.length));
+        const list = pscs.value;
+        const items = list.items ?? [];
+        if (items.length === 0 && (list.total_results ?? 0) === 0) {
+          const explanation = await explainAbsentPSCs(client, company_number);
+          const narrative = describeAbsentPSCs(explanation);
+          sections.push(narrative.lines.join('\n'));
+          structured.pscs = {
+            ...list,
+            psc_exempt: explanation.exempt,
+            psc_exemption_types: explanation.exemption_types,
+            psc_exemptions: explanation.exemptions,
+            psc_expired_exemptions: explanation.expired_exemptions,
+            psc_statements: explanation.statements,
+            psc_absence_explained: !narrative.unexplained,
+          };
+          coverage.push({
+            resource: 'Persons with significant control',
+            status: 'not-applicable',
+            note: narrative.coverageNote,
+          });
         } else {
-          sections.push('No outstanding charges.');
+          sections.push(
+            formatPSCs(items, list.total_results ?? items.length, {
+              active: list.active_count,
+              ceased: list.ceased_count,
+            })
+          );
+          structured.pscs = list;
+          const complete = items.length >= (list.total_results ?? 0);
+          coverage.push({
+            resource: 'Persons with significant control',
+            status: complete ? 'complete' : 'partial',
+            retrieved: items.length,
+            total: list.total_results,
+            note: complete ? undefined : 'use get_ownership to page through the rest',
+          });
         }
-        structured.charges = charges.value;
       } else {
-        sections.push('\n---\n## Charges\n*No charge data available.*');
+        sections.push('Ownership records could not be retrieved for this request.');
+        coverage.push({
+          resource: 'Persons with significant control',
+          status: 'unavailable',
+          note: 'request failed',
+        });
       }
 
-      // Recent filings
+      // ---- Charges
+      sections.push('\n---\n## Charges\n');
+      if (charges.status === 'fulfilled' && charges.value) {
+        const list = charges.value;
+        const counts = chargeCounts(list);
+        const items = list.items ?? [];
+        sections.push(formatChargeCounts(counts), '', formatCharges(items, counts.total));
+        structured.charges = { ...list, charge_counts: counts };
+        const complete = items.length >= counts.total;
+        coverage.push({
+          resource: 'Charges',
+          status: complete ? 'complete' : 'partial',
+          retrieved: items.length,
+          total: counts.total,
+          note: complete ? undefined : 'use get_charges to page through the rest',
+        });
+      } else if (charges.status === 'fulfilled') {
+        sections.push('No charges are registered against this company.');
+        structured.charges = { items: [], total_count: 0 };
+        coverage.push({ resource: 'Charges', status: 'not-applicable' });
+      } else if (isNotFound(charges.reason)) {
+        sections.push('No charges are registered against this company.');
+        coverage.push({ resource: 'Charges', status: 'not-applicable' });
+      } else {
+        sections.push('Charge records could not be retrieved for this request.');
+        coverage.push({ resource: 'Charges', status: 'unavailable', note: 'request failed' });
+      }
+
+      // ---- Filings
+      sections.push(`\n---\n## Most recent filings\n`);
       if (filings.status === 'fulfilled') {
-        sections.push('\n---\n## Recent Filings (Last 10)\n');
-        sections.push(formatFilings(filings.value.items ?? [], filings.value.total_count ?? 0));
-        structured.filings = filings.value;
+        const list = filings.value;
+        const items = list.items ?? [];
+        sections.push(formatFilings(items, list.total_count ?? items.length));
+        sections.push(
+          formatPagination({
+            start_index: 0,
+            items_per_page: FILINGS_PAGE,
+            returned: items.length,
+            total: list.total_count,
+          })
+        );
+        structured.filings = list;
+        coverage.push({
+          resource: 'Filing history',
+          status: items.length >= (list.total_count ?? 0) ? 'complete' : 'partial',
+          retrieved: items.length,
+          total: list.total_count,
+          note:
+            items.length >= (list.total_count ?? 0)
+              ? undefined
+              : `this report shows the ${FILINGS_PAGE} most recent; use get_filings for the rest`,
+        });
       } else {
-        sections.push('\n---\n## Filings\n*Could not retrieve filing data.*');
+        sections.push('Filing history could not be retrieved for this request.');
+        coverage.push({
+          resource: 'Filing history',
+          status: 'unavailable',
+          note: 'request failed',
+        });
       }
 
-      // Insolvency
-      if (insolvency.status === 'fulfilled') {
+      // ---- Insolvency
+      sections.push('\n---\n## Insolvency\n');
+      if (insolvency.status === 'fulfilled' && insolvency.value) {
         const cases = insolvency.value.cases ?? [];
-        if (cases.length > 0) {
-          sections.push('\n---\n## Insolvency\n');
-          sections.push(formatInsolvency(cases));
-        } else {
-          sections.push('\n---\n## Insolvency\nNo insolvency proceedings.');
-        }
+        sections.push(cases.length ? formatInsolvency(cases) : 'No insolvency cases are recorded.');
         structured.insolvency = insolvency.value;
+        coverage.push({ resource: 'Insolvency', status: 'complete', retrieved: cases.length });
+      } else if (insolvency.status === 'fulfilled' || isNotFound(insolvency.reason)) {
+        sections.push('No insolvency history is recorded for this company.');
+        coverage.push({ resource: 'Insolvency', status: 'not-applicable' });
       } else {
-        sections.push('\n---\n## Insolvency\nNo insolvency history.');
+        sections.push('Insolvency records could not be retrieved for this request.');
+        coverage.push({ resource: 'Insolvency', status: 'unavailable', note: 'request failed' });
       }
+
+      sections.push('\n---\n', ...coverageLines(coverage), ...limitationLines());
+      structured.coverage = coverage;
 
       return makeTextResult(sections.join('\n'), structured);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── due_diligence_check ─────────────────────────────────────────────────
-const ddShape = {
-  company_number: z.string().describe('Companies House company number'),
-};
-const ddSchema = z.object(ddShape);
+const ddSchema = z.object({ company_number: companyNumberSchema });
 
-interface RedFlag {
+export type ObservationSeverity = 'high' | 'medium' | 'low';
+
+export interface Observation {
   category: string;
-  severity: 'high' | 'medium' | 'low';
+  severity: ObservationSeverity;
   detail: string;
+  /** Which register record the observation was read from. */
+  source: string;
+}
+
+export interface PerformedCheck {
+  check: string;
+  status: 'ran' | 'unavailable';
+  note?: string;
 }
 
 registerTool({
   name: 'due_diligence_check',
+  title: 'Public Register Screening Summary',
   description:
-    'Run an automated due diligence red-flag scan on a UK company. Checks: company status (dissolved, liquidation, etc.), insolvency history, outstanding charges, overdue accounts, overdue confirmation statement, PSC warnings, and recently resigned officers. Returns a structured risk assessment with severity levels.',
-  inputSchema: ddShape,
+    'Screen one company against what is recorded on the Companies House public register and report the entries a reviewer would want to look at: register status and status detail, insolvency records, outstanding charges, overdue accounts and confirmation statements, registered office disputes, officer changes, ownership records and company age. It reports observations drawn from filed data, together with the checks it ran and the checks it could not run. It is not a verification, credit check, sanctions or politically-exposed-person screening, or a clearance decision, and it never concludes that a company is sound.',
+  inputSchema: ddSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'summaries',
   async execute(client: APIClient, params: unknown) {
     const { company_number } = ddSchema.parse(params);
 
     try {
-      const [profile, officers, pscs, charges, insolvency] = await Promise.allSettled([
-        getCompanyProfile(client, company_number),
+      let profile: CompanyProfile;
+      try {
+        profile = await getCompanyProfile(client, company_number);
+      } catch (error) {
+        return makeErrorResult(error, {
+          prefix: 'Could not read the company profile:',
+          notFoundSuffix: 'Use search_companies to find the correct company number.',
+        });
+      }
+
+      const [officers, pscs, charges, insolvency] = await Promise.allSettled([
         getCompanyOfficers(client, company_number, { items_per_page: 100 }),
-        getPersonsWithSignificantControl(client, company_number, { items_per_page: 25 }),
-        getCompanyCharges(client, company_number, { items_per_page: 100 }),
-        getCompanyInsolvency(client, company_number),
+        getPersonsWithSignificantControl(client, company_number, { items_per_page: PSC_PAGE }),
+        hasLink(profile, 'charges')
+          ? getCompanyCharges(client, company_number, { items_per_page: 1 })
+          : Promise.resolve(null),
+        hasLink(profile, 'insolvency')
+          ? getCompanyInsolvency(client, company_number)
+          : Promise.resolve(null),
       ]);
 
-      if (profile.status === 'rejected') {
-        return makeErrorResult(`Could not fetch company: ${profile.reason?.message}`);
-      }
+      const observations: Observation[] = [];
+      const checks: PerformedCheck[] = [];
+      const coverage: CoverageEntry[] = [];
 
-      const p = profile.value;
-      const flags: RedFlag[] = [];
-
-      // Company status checks
-      if (['dissolved', 'liquidation', 'receivership', 'administration', 'insolvency-proceedings'].includes(p.company_status)) {
-        flags.push({
-          category: 'Company Status',
+      // ---- Register status
+      checks.push({ check: 'Register status', status: 'ran' });
+      const adverseStatuses = [
+        'dissolved',
+        'liquidation',
+        'receivership',
+        'administration',
+        'insolvency-proceedings',
+        'closed',
+        'removed',
+      ];
+      if (adverseStatuses.includes(profile.company_status)) {
+        observations.push({
+          category: 'Register status',
           severity: 'high',
-          detail: `Company is ${formatCompanyStatus(p.company_status)}`,
+          detail: `The register records this company as ${formatCompanyStatus(profile.company_status)}.`,
+          source: 'company profile',
         });
       }
-      if (p.company_status === 'voluntary-arrangement') {
-        flags.push({
-          category: 'Company Status',
+      if (profile.company_status === 'voluntary-arrangement') {
+        observations.push({
+          category: 'Register status',
           severity: 'medium',
-          detail: 'Company is in a voluntary arrangement',
+          detail: 'The register records a voluntary arrangement with creditors.',
+          source: 'company profile',
+        });
+      }
+      // A company can be `active` and simultaneously subject to a strike-off
+      // proposal, so the detail is checked independently of the status.
+      if (profile.company_status_detail) {
+        const isStrikeOff = profile.company_status_detail === 'active-proposal-to-strike-off';
+        observations.push({
+          category: 'Register status',
+          severity: isStrikeOff ? 'high' : 'low',
+          detail: `Status detail on the register: ${formatCompanyStatusDetail(profile.company_status_detail)}.`,
+          source: 'company profile',
         });
       }
 
-      // Insolvency — consolidate into a single flag to avoid duplication
-      {
-        const insolvencyDetails: string[] = [];
-        if (p.has_insolvency_history) insolvencyDetails.push('has insolvency history');
-        if (insolvency.status === 'fulfilled' && (insolvency.value.cases?.length ?? 0) > 0) {
-          insolvencyDetails.push(`${insolvency.value.cases!.length} case(s) on record`);
-        }
-        if (p.has_been_liquidated) insolvencyDetails.push('has been liquidated');
-        if (insolvencyDetails.length > 0) {
-          flags.push({
+      // ---- Insolvency
+      if (insolvency.status === 'fulfilled' && insolvency.value) {
+        checks.push({ check: 'Insolvency record', status: 'ran' });
+        const cases = insolvency.value.cases ?? [];
+        if (cases.length) {
+          const types = [...new Set(cases.map(c => c.type).filter(Boolean))];
+          observations.push({
             category: 'Insolvency',
             severity: 'high',
-            detail: `Company ${insolvencyDetails.join(', ')}`,
+            detail: `${cases.length} insolvency case(s) on the register${types.length ? ` (${types.join(', ')})` : ''}.`,
+            source: 'insolvency record',
           });
         }
+        coverage.push({ resource: 'Insolvency', status: 'complete', retrieved: cases.length });
+      } else if (insolvency.status === 'fulfilled' || isNotFound(insolvency.reason)) {
+        checks.push({ check: 'Insolvency record', status: 'ran' });
+        coverage.push({ resource: 'Insolvency', status: 'not-applicable' });
+      } else {
+        checks.push({
+          check: 'Insolvency record',
+          status: 'unavailable',
+          note: 'the request failed, so insolvency was not checked',
+        });
+        coverage.push({ resource: 'Insolvency', status: 'unavailable' });
       }
 
-      // Accounts overdue
-      if (p.accounts?.overdue || p.accounts?.next_accounts?.overdue) {
-        flags.push({
+      // ---- Filing compliance
+      checks.push({ check: 'Filing deadlines', status: 'ran' });
+      if (accountsOverdue(profile)) {
+        observations.push({
           category: 'Accounts',
           severity: 'high',
-          detail: 'Accounts are overdue',
+          detail: `Accounts are recorded as overdue${profile.accounts?.next_accounts?.due_on ? ` (due ${formatDate(profile.accounts.next_accounts.due_on)})` : ''}.`,
+          source: 'company profile',
         });
       }
-
-      // Confirmation statement overdue
-      if (p.confirmation_statement?.overdue) {
-        flags.push({
-          category: 'Confirmation Statement',
+      if (profile.confirmation_statement?.overdue) {
+        observations.push({
+          category: 'Confirmation statement',
           severity: 'medium',
-          detail: 'Confirmation statement is overdue',
+          detail: `The confirmation statement is recorded as overdue${profile.confirmation_statement.next_due ? ` (due ${formatDate(profile.confirmation_statement.next_due)})` : ''}.`,
+          source: 'company profile',
         });
       }
 
-      // Charges
-      if (charges.status === 'fulfilled') {
-        const outstanding = (charges.value.items ?? []).filter(c => c.status !== 'fully-satisfied');
-        if (outstanding.length > 0) {
-          flags.push({
+      // ---- Charges
+      if (charges.status === 'fulfilled' && charges.value) {
+        checks.push({ check: 'Registered charges', status: 'ran' });
+        const counts = chargeCounts(charges.value);
+        if (counts.outstanding) {
+          observations.push({
             category: 'Charges',
             severity: 'medium',
-            detail: `${outstanding.length} outstanding charge(s)`,
+            detail: `${counts.outstanding} outstanding charge(s) of ${counts.total} on the register. A charge records that security was granted; it does not show the amount currently owed.`,
+            source: 'charges record',
           });
         }
+        if (counts.part_satisfied) {
+          observations.push({
+            category: 'Charges',
+            severity: 'low',
+            detail: `${counts.part_satisfied} part-satisfied charge(s) on the register.`,
+            source: 'charges record',
+          });
+        }
+        coverage.push({
+          resource: 'Charges',
+          status: 'complete',
+          total: counts.total,
+          note: 'counted from the register totals rather than by reading each charge',
+        });
+      } else if (charges.status === 'fulfilled' || isNotFound(charges.reason)) {
+        checks.push({ check: 'Registered charges', status: 'ran' });
+        coverage.push({ resource: 'Charges', status: 'not-applicable' });
+      } else {
+        checks.push({
+          check: 'Registered charges',
+          status: 'unavailable',
+          note: 'the request failed, so charges were not checked',
+        });
+        coverage.push({ resource: 'Charges', status: 'unavailable' });
       }
 
-      // Registered office issues
-      if (p.registered_office_is_in_dispute) {
-        flags.push({
-          category: 'Registered Office',
+      // ---- Registered office
+      checks.push({ check: 'Registered office', status: 'ran' });
+      if (profile.registered_office_is_in_dispute) {
+        observations.push({
+          category: 'Registered office',
           severity: 'medium',
-          detail: 'Registered office address is in dispute',
+          detail: 'The registered office address is recorded as in dispute.',
+          source: 'company profile',
         });
       }
-      if (p.undeliverable_registered_office_address) {
-        flags.push({
-          category: 'Registered Office',
+      if (profile.undeliverable_registered_office_address) {
+        observations.push({
+          category: 'Registered office',
           severity: 'medium',
-          detail: 'Registered office address is undeliverable',
+          detail: 'Post to the registered office address has been recorded as undeliverable.',
+          source: 'company profile',
         });
       }
 
-      // Officer checks
+      // ---- Officers
       if (officers.status === 'fulfilled') {
-        const allOfficers = officers.value.items ?? [];
-        const active = allOfficers.filter(o => !o.resigned_on);
-        const recentlyResigned = allOfficers.filter(o => {
-          if (!o.resigned_on) return false;
-          const resigned = new Date(o.resigned_on);
-          const sixMonthsAgo = new Date();
-          sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-          return resigned > sixMonthsAgo;
+        const list = officers.value;
+        const all = list.items ?? [];
+        const active = all.filter(officer => !officer.resigned_on);
+        const activeCount = list.active_count ?? active.length;
+        const readEverything = all.length >= (list.total_results ?? all.length);
+
+        checks.push({
+          check: 'Officers',
+          status: 'ran',
+          note: readEverything
+            ? undefined
+            : `read the first ${all.length} of ${list.total_results} officer records`,
         });
 
-        if (active.length === 0) {
-          flags.push({
+        if (activeCount === 0 && profile.company_status === 'active') {
+          observations.push({
             category: 'Officers',
             severity: 'high',
-            detail: 'No active officers found',
+            detail: 'No officers are currently in post for a company the register shows as active.',
+            source: 'officers record',
           });
         }
-        if (active.length === 1) {
-          flags.push({
+        if (activeCount === 1) {
+          observations.push({
             category: 'Officers',
             severity: 'low',
-            detail: 'Only one active officer (sole director)',
+            detail: 'One officer currently in post. Common for small companies.',
+            source: 'officers record',
           });
         }
-        if (recentlyResigned.length > 0) {
-          flags.push({
+
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        const recentlyResigned = all.filter(officer => {
+          if (!officer.resigned_on) return false;
+          const resigned = new Date(officer.resigned_on);
+          return !Number.isNaN(resigned.getTime()) && resigned > sixMonthsAgo;
+        });
+        if (recentlyResigned.length) {
+          observations.push({
             category: 'Officers',
             severity: 'medium',
-            detail: `${recentlyResigned.length} officer(s) resigned in the last 6 months`,
+            detail: `${recentlyResigned.length} officer(s) recorded as resigned in the last six months${readEverything ? '' : ' within the records read'}.`,
+            source: 'officers record',
           });
         }
+
+        coverage.push({
+          resource: 'Officers',
+          status: readEverything ? 'complete' : 'partial',
+          retrieved: all.length,
+          total: list.total_results,
+          note: readEverything ? undefined : 'use get_officers to read the rest',
+        });
+      } else {
+        checks.push({
+          check: 'Officers',
+          status: 'unavailable',
+          note: 'the request failed, so officers were not checked',
+        });
+        coverage.push({ resource: 'Officers', status: 'unavailable' });
       }
 
-      // PSC checks
+      // ---- Ownership
       if (pscs.status === 'fulfilled') {
-        const activePSCs = (pscs.value.items ?? []).filter(psc => !psc.ceased_on);
-        if (activePSCs.length === 0 && p.company_status === 'active') {
-          flags.push({
-            category: 'Ownership',
-            severity: 'medium',
-            detail: 'No active PSCs registered for an active company',
+        const list = pscs.value;
+        const items = list.items ?? [];
+        const activePSCs = items.filter(psc => !psc.ceased_on);
+
+        if (items.length === 0 && (list.total_results ?? 0) === 0) {
+          // An empty PSC register is only worth remarking on when it is not
+          // explained by an exemption or a filed statement.
+          const explanation = await explainAbsentPSCs(client, company_number);
+          const narrative = describeAbsentPSCs(explanation);
+          checks.push({ check: 'Ownership (PSC)', status: 'ran' });
+
+          if (narrative.unexplained && profile.company_status === 'active') {
+            observations.push({
+              category: 'Ownership',
+              severity: 'medium',
+              detail: explanation.expired_exemptions.length
+                ? 'The company held a PSC exemption that has ended, and has filed no PSC entry or statement since. Ownership cannot be established from the register.'
+                : 'No PSC entry, exemption in force, or statement is recorded for a company the register shows as active. Ownership cannot be established from the register.',
+              source: 'PSC record',
+            });
+          }
+
+          coverage.push({
+            resource: 'Persons with significant control',
+            status: 'not-applicable',
+            note: narrative.coverageNote,
+          });
+        } else {
+          checks.push({ check: 'Ownership (PSC)', status: 'ran' });
+          if (activePSCs.length === 0 && profile.company_status === 'active') {
+            observations.push({
+              category: 'Ownership',
+              severity: 'medium',
+              detail:
+                'Every PSC entry on the register has ceased, and no current one has been filed for a company the register shows as active.',
+              source: 'PSC record',
+            });
+          }
+          coverage.push({
+            resource: 'Persons with significant control',
+            status: items.length >= (list.total_results ?? 0) ? 'complete' : 'partial',
+            retrieved: items.length,
+            total: list.total_results,
           });
         }
+      } else {
+        checks.push({
+          check: 'Ownership (PSC)',
+          status: 'unavailable',
+          note: 'the request failed, so ownership was not checked',
+        });
+        coverage.push({ resource: 'Persons with significant control', status: 'unavailable' });
       }
 
-      // Company age
-      if (p.date_of_creation) {
-        const created = new Date(p.date_of_creation);
+      // ---- Company age
+      checks.push({ check: 'Company age', status: 'ran' });
+      if (profile.date_of_creation) {
+        const created = new Date(profile.date_of_creation);
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-        if (created > oneYearAgo) {
-          flags.push({
-            category: 'Company Age',
+        if (!Number.isNaN(created.getTime()) && created > oneYearAgo) {
+          observations.push({
+            category: 'Company age',
             severity: 'low',
-            detail: `Company is less than one year old (incorporated ${formatDate(p.date_of_creation)})`,
+            detail: `Incorporated ${formatDate(profile.date_of_creation)}, less than a year ago.`,
+            source: 'company profile',
           });
         }
       }
 
-      // Build report
-      const high = flags.filter(f => f.severity === 'high');
-      const medium = flags.filter(f => f.severity === 'medium');
-      const low = flags.filter(f => f.severity === 'low');
-
-      const riskLevel = high.length > 0 ? 'HIGH' : medium.length > 0 ? 'MEDIUM' : low.length > 0 ? 'LOW' : 'CLEAR';
+      // ---- Report
+      const high = observations.filter(o => o.severity === 'high');
+      const medium = observations.filter(o => o.severity === 'medium');
+      const low = observations.filter(o => o.severity === 'low');
+      const unavailable = checks.filter(check => check.status === 'unavailable');
 
       const lines: string[] = [
-        `## Due Diligence Report: ${p.company_name}`,
+        `## Public register screening: ${profile.company_name}`,
         '',
-        `**Company Number:** ${p.company_number}`,
-        `**Status:** ${formatCompanyStatus(p.company_status)}`,
-        `**Risk Level:** ${riskLevel}`,
+        `**Company number:** ${profile.company_number}`,
+        `**Register status:** ${formatCompanyStatus(profile.company_status)}${
+          profile.company_status_detail
+            ? ` — ${formatCompanyStatusDetail(profile.company_status_detail)}`
+            : ''
+        }`,
+        // Deliberately not "2 higher, 3 moderate, 1 contextual". A tally in
+        // that shape reads as a scorecard, and a scorecard is what a reader
+        // compresses into a score — but these entries are not comparable and
+        // certainly not additive. Two outstanding charges on a company with
+        // nine is not half of anything.
+        `**Entries to review:** ${observations.length}. They are grouped by how much attention each warrants, and are not a score.`,
+        '',
+        'This summarises entries on the Companies House public register. It is not a verification, credit check or clearance decision.',
         '',
       ];
 
-      if (flags.length === 0) {
-        lines.push('No red flags identified. Company appears to be in good standing.');
+      if (observations.length === 0) {
+        lines.push(
+          '### Entries to review',
+          '',
+          'The checks below found no adverse entries on the public register. That means nothing adverse has been *filed* — it is not a statement that the company is sound, solvent, genuine or suitable to deal with. Companies House does not verify what companies file.',
+          ''
+        );
       } else {
-        lines.push(`### ${flags.length} Flag(s) Found\n`);
-        if (high.length) {
-          lines.push('#### High Severity');
-          for (const f of high) lines.push(`- **${f.category}:** ${f.detail}`);
-          lines.push('');
-        }
-        if (medium.length) {
-          lines.push('#### Medium Severity');
-          for (const f of medium) lines.push(`- **${f.category}:** ${f.detail}`);
-          lines.push('');
-        }
-        if (low.length) {
-          lines.push('#### Low Severity');
-          for (const f of low) lines.push(`- **${f.category}:** ${f.detail}`);
+        lines.push('### Entries to review', '');
+        const groups: Array<[string, Observation[]]> = [
+          ['Higher significance', high],
+          ['Moderate significance', medium],
+          ['Contextual', low],
+        ];
+        for (const [heading, group] of groups) {
+          if (!group.length) continue;
+          lines.push(`#### ${heading}`, '');
+          for (const observation of group) {
+            lines.push(
+              `- **${observation.category}:** ${observation.detail} _(${observation.source})_`
+            );
+          }
           lines.push('');
         }
       }
 
+      lines.push('### Checks performed', '');
+      for (const check of checks) {
+        lines.push(
+          check.status === 'ran'
+            ? `- ${check.check}${check.note ? ` — ${check.note}` : ''}`
+            : `- ${check.check} — **not performed**${check.note ? `: ${check.note}` : ''}`
+        );
+      }
+      lines.push('');
+
+      if (unavailable.length) {
+        lines.push(
+          `_${unavailable.length} check(s) could not be performed, so this summary is incomplete._`,
+          ''
+        );
+      }
+
+      lines.push(...coverageLines(coverage), ...limitationLines());
+
       return makeTextResult(lines.join('\n'), {
-        company_number,
-        company_name: p.company_name,
-        risk_level: riskLevel,
-        flags,
-        flag_count: { high: high.length, medium: medium.length, low: low.length },
+        company_number: profile.company_number,
+        company_name: profile.company_name,
+        company_status: profile.company_status,
+        company_status_detail: profile.company_status_detail,
+        observations,
+        observation_counts: { high: high.length, medium: medium.length, low: low.length },
+        checks_performed: checks,
+        checks_incomplete: unavailable.length > 0,
+        coverage,
+        limitations_apply: true,
       });
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── officer_network ─────────────────────────────────────────────────────
-const networkShape = {
-  officer_id: z.string().optional().describe('Officer ID (from search_officers). Provide this OR officer_name.'),
-  officer_name: z.string().optional().describe('Officer name to search for. Provide this OR officer_id.'),
-};
-const networkSchema = z.object(networkShape).refine(data => data.officer_id || data.officer_name, {
-  message: 'Provide either officer_id or officer_name',
-});
+const networkSchema = z
+  .object({
+    officer_id: officerIdSchema
+      .optional()
+      .describe('Officer id from search_officers. Preferred — provide this or officer_name.'),
+    officer_name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Officer name to look up. Only used when officer_id is not given, and only accepted when the name matches exactly one officer.'
+      ),
+    items_per_page: pageSizeSchema(100),
+  })
+  .refine(data => data.officer_id || data.officer_name, {
+    message: 'Provide either officer_id or officer_name.',
+  });
 
 registerTool({
   name: 'officer_network',
+  title: 'Map Officer Appointments',
   description:
-    'Map an officer\'s network of company appointments. Given an officer ID or name, finds all their current and past directorships/appointments. Shows connected companies, their statuses, and roles held. Useful for investigating directors across multiple companies.',
-  inputSchema: networkShape,
+    "Map every company one officer id is or was appointed to, split into current and past appointments with each company's status. Pages through the full appointment list rather than showing only the first page. Prefer officer_id: a name is only accepted when it matches exactly one officer, because officer names are not unique and picking the wrong match produces a confidently wrong network. Appointments are grouped by Companies House officer id, so one individual may hold more than one.",
+  inputSchema: networkSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'summaries',
   async execute(client: APIClient, params: unknown) {
     const input = networkSchema.parse(params);
 
     try {
       let officerId = input.officer_id;
-      let officerName = input.officer_name;
+      let resolvedFromName: string | undefined;
 
-      // If only name provided, search for the officer
-      if (!officerId && officerName) {
-        const searchResult = await searchOfficers(client, { q: officerName, items_per_page: 5 });
-        if (!searchResult.items?.length) {
+      if (!officerId && input.officer_name) {
+        const matches = await searchOfficers(client, {
+          q: input.officer_name,
+          items_per_page: 10,
+        });
+        const items = matches.items ?? [];
+
+        if (!items.length) {
           return makeTextResult(
-            `No officers found matching "${officerName}". Try search_officers for alternative spellings.`,
-            { items: [] }
+            `No officer matches "${input.officer_name}". Try search_officers with a different spelling.`,
+            { officer_name: input.officer_name, matches: [] }
           );
         }
-        const first = searchResult.items[0]!;
-        const match = first.links?.self?.match(/\/officers\/([^/]+)/);
-        if (!match?.[1]) {
+
+        // Refusing to guess is the point: silently taking the first of many
+        // same-named officers produces a network for the wrong person.
+        if (items.length > 1) {
           return makeTextResult(
-            `Found officer "${first.title}" but could not extract officer ID. Use search_officers to find the officer ID, then call officer_network with officer_id.\n\nResults:\n\n${formatOfficerSearchResults(searchResult.items, searchResult.total_results)}`,
-            searchResult as unknown as Record<string, unknown>
+            [
+              `"${input.officer_name}" matches ${matches.total_results ?? items.length} officers, so no network was produced. Pick the right one and call again with its officer_id.`,
+              '',
+              formatOfficerSearchResults(items, matches.total_results ?? items.length),
+            ].join('\n'),
+            {
+              officer_name: input.officer_name,
+              ambiguous: true,
+              match_count: matches.total_results ?? items.length,
+              matches: items,
+            }
           );
         }
-        officerId = match[1];
-        officerName = first.title;
 
-        // Warn if multiple results — user may want a different officer
-        if (searchResult.total_results > 1) {
-          // We'll prepend a note to the output later
-          officerName = `${first.title} (note: ${searchResult.total_results} officers matched "${input.officer_name}" — using first result. Use search_officers + officer_id for precision)`;
+        const only = items[0]!;
+        const extracted = only.links?.self?.match(/\/officers\/([^/]+)/)?.[1];
+        if (!extracted) {
+          return makeTextResult(
+            `Found "${only.title}" but Companies House did not return an officer id for it. Use search_officers and pass officer_id directly.`,
+            { officer_name: input.officer_name, matches: items }
+          );
         }
+        officerId = extracted;
+        resolvedFromName = only.title;
       }
 
-      const appointments = await getOfficerAppointments(client, officerId!, { items_per_page: 100 });
+      let name: string | undefined;
+      let dateOfBirth: unknown;
+      const collected = await collectPages<OfficerAppointment>(
+        async (startIndex, itemsPerPage) => {
+          const page = await getOfficerAppointments(client, officerId!, {
+            items_per_page: itemsPerPage,
+            start_index: startIndex,
+          });
+          name ??= page.name;
+          dateOfBirth ??= page.date_of_birth;
+          return { items: page.items ?? [], total: page.total_results };
+        },
+        { pageSize: input.items_per_page, maxPages: MAX_AUTO_PAGES }
+      );
 
-      const active = (appointments.items ?? []).filter(a => !a.resigned_on);
-      const resigned = (appointments.items ?? []).filter(a => a.resigned_on);
+      const current = collected.items.filter(appointment => !appointment.resigned_on);
+      const past = collected.items.filter(appointment => appointment.resigned_on);
+      const displayName = name ?? resolvedFromName ?? officerId!;
 
       const lines: string[] = [
-        `## Officer Network: ${appointments.name ?? officerName ?? officerId}`,
+        `## Appointments for ${displayName}`,
         '',
-        `**Total Appointments:** ${appointments.total_results ?? appointments.items?.length ?? 0}`,
-        `**Active:** ${active.length}`,
-        `**Resigned:** ${resigned.length}`,
+        `**Officer ID:** ${officerId}`,
+        `**Appointments on the register:** ${collected.total ?? collected.items.length}`,
+        // The split is only over what was retrieved. Printing it unqualified
+        // beside the register total invites the reading that the rest are past
+        // appointments, which is not something this call established.
+        collected.complete
+          ? `**Current:** ${current.length}   **Past:** ${past.length}`
+          : `**Retrieved ${collected.items.length} of them:** ${current.length} current, ${past.length} past. The split across the rest is unknown.`,
         '',
       ];
 
-      if (active.length > 0) {
-        lines.push('### Current Appointments\n');
-        lines.push(formatAppointments(active, active.length));
-      } else {
-        lines.push('### Current Appointments\nNo current appointments.\n');
+      if (resolvedFromName) {
+        lines.push(
+          `_Resolved from the name "${input.officer_name}", which matched exactly one officer._`,
+          ''
+        );
       }
 
-      if (resigned.length > 0) {
-        lines.push('### Past Appointments\n');
-        lines.push(formatAppointments(resigned, resigned.length));
+      lines.push('### Current appointments', '');
+      lines.push(current.length ? formatAppointments(current, current.length) : 'None.\n');
+
+      if (past.length) {
+        lines.push('### Past appointments', '');
+        lines.push(formatAppointments(past, past.length));
       }
+
+      const coverage: CoverageEntry[] = [
+        {
+          resource: 'Appointments',
+          status: collected.complete ? 'complete' : 'partial',
+          retrieved: collected.items.length,
+          total: collected.total,
+          note: collected.complete
+            ? undefined
+            : `stopped after ${collected.pagesFetched} page(s) because the page budget ran out; use get_appointments with start_index to continue`,
+        },
+      ];
+      if (!collected.complete) {
+        lines.push(
+          `_This is a partial list: collection stopped after ${collected.pagesFetched} page(s)._`,
+          ''
+        );
+        lines.push(...coverageLines(coverage));
+      }
+
+      lines.push(
+        '_Appointments are grouped by Companies House officer id. The same individual may appear under more than one id, so this may not be every appointment they hold._',
+        ''
+      );
 
       return makeTextResult(lines.join('\n'), {
         officer_id: officerId,
-        officer_name: appointments.name ?? officerName,
-        total_appointments: appointments.total_results ?? 0,
-        active_count: active.length,
-        resigned_count: resigned.length,
-        appointments: appointments as unknown as Record<string, unknown>,
+        officer_name: name ?? resolvedFromName,
+        date_of_birth: dateOfBirth,
+        total_appointments: collected.total ?? collected.items.length,
+        current_count: current.length,
+        past_count: past.length,
+        appointments: collected.items,
+        coverage,
       });
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err, {
+        notFoundSuffix: 'Use search_officers to confirm the officer id.',
+      });
     }
   },
 });

@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.aicayzer/companies-house",
-  "description": "MCP server and CLI for the UK Companies House API. Search, filings, officers, due diligence.",
-  "version": "3.2.0",
+  "description": "MCP server for the UK Companies House public register: 18 tools for company search, records, officers, ownership, filings and filed documents. Bring your own free API key.",
+  "version": "4.0.0",
   "repository": {
     "url": "https://github.com/aicayzer/companies-house-mcp",
     "source": "github"
@@ -11,13 +11,15 @@
     {
       "registryType": "npm",
       "identifier": "companies-house-mcp",
-      "version": "3.2.0",
+      "version": "4.0.0",
       "runtime": "node",
-      "transport": { "type": "stdio" },
+      "transport": {
+        "type": "stdio"
+      },
       "environmentVariables": [
         {
           "name": "COMPANIES_HOUSE_API_KEY",
-          "description": "API key from developer.company-information.service.gov.uk — free to register",
+          "description": "Your own API key from developer.company-information.service.gov.uk \u2014 free to register",
           "required": true
         }
       ]

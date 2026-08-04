@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { APIClient, CompaniesHouseAPIError } from '../../../src/api/client.js';
+import {
+  APIClient,
+  CompaniesHouseAPIError,
+  CompaniesHouseNetworkError,
+} from '../../../src/api/client.js';
 
 describe('APIClient', () => {
   const originalFetch = globalThis.fetch;
@@ -21,6 +25,18 @@ describe('APIClient', () => {
     expect(capturedHeaders?.get('Authorization')).toBe(
       'Basic ' + Buffer.from('test-key:').toString('base64')
     );
+  });
+
+  it('wraps authenticated fetch failures as typed network errors', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    const client = new APIClient({ api_key: 'test-key', cache_enabled: false });
+
+    await expect(
+      client.fetchWithAuth('https://api.company-information.service.gov.uk/test', {}, '/test')
+    ).rejects.toMatchObject({
+      name: 'CompaniesHouseNetworkError',
+      endpoint: '/test',
+    } satisfies Partial<CompaniesHouseNetworkError>);
   });
 
   it('returns parsed JSON on success', async () => {
@@ -48,7 +64,7 @@ describe('APIClient', () => {
     }) as typeof fetch;
 
     const client = new APIClient({ api_key: 'bad-key', cache_enabled: false });
-    await expect(client.get('/test')).rejects.toThrow('Invalid API key');
+    await expect(client.get('/test')).rejects.toThrow('rejected the API key');
   });
 
   it('uses cache when enabled', async () => {
@@ -117,11 +133,48 @@ describe('CompaniesHouseAPIError', () => {
     const error = CompaniesHouseAPIError.fromResponse(404, '/company/test');
     expect(error.statusCode).toBe(404);
     expect(error.endpoint).toBe('/company/test');
-    expect(error.message).toContain('Not found');
+    expect(error.message).toContain('no such record');
   });
 
-  it('includes response body in error', () => {
+  it('keeps the upstream body only where it explains something', () => {
+    // A 404 body is a timestamp and a request id; a 400 body says what was
+    // wrong with the request.
+    const notFound = CompaniesHouseAPIError.fromResponse(
+      404,
+      '/x',
+      '{"timestamp":"...","message":"..."}'
+    );
+    expect(notFound.message).not.toContain('timestamp');
+
+    const badRequest = CompaniesHouseAPIError.fromResponse(
+      400,
+      '/x',
+      '{"error":"invalid start_index"}'
+    );
+    expect(badRequest.message).toContain('invalid start_index');
+  });
+
+  it('describes upstream rate limits without claiming the request is queued', () => {
+    const error = CompaniesHouseAPIError.fromResponse(429, '/company/test');
+
+    expect(error.message).toContain('rate limit reached');
+    expect(error.message).not.toContain('queued');
+  });
+
+  it('reports the wait Companies House signalled', () => {
+    const error = CompaniesHouseAPIError.fromResponse(429, '/company/test', undefined, 12);
+
+    expect(error.retryAfterSeconds).toBe(12);
+    expect(error.message).toContain('Retry in about 12 second(s)');
+  });
+
+  it('includes the response body for a malformed request', () => {
     const error = CompaniesHouseAPIError.fromResponse(400, '/test', '{"error":"bad"}');
     expect(error.message).toContain('bad');
+  });
+
+  it('never lets a large upstream body dominate the message', () => {
+    const error = CompaniesHouseAPIError.fromResponse(500, '/test', 'x'.repeat(5000));
+    expect(error.message.length).toBeLessThan(400);
   });
 });

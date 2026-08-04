@@ -1,106 +1,130 @@
 ---
 name: companies-house-cli
-description: Help users work with the ch CLI for UK Companies House data. Use when the user wants to run ch commands, query Companies House from the terminal, pipe output, or script with the JSON output.
+description: Help users work with the ch CLI for the UK Companies House public register. Use when the user wants to run ch commands, query Companies House from the terminal, pipe its output, or script against its JSON.
 ---
 
-You have access to the `ch` CLI from the `companies-house-cli` package. Use it to help users query UK company data directly from the terminal.
+You have the `ch` CLI from the `companies-house-cli` package. Use it to read the UK Companies House public register from the terminal.
+
+Run `ch --help` for the command list and `ch <command> --help` for one command's flags. That help is generated from the tools themselves, so prefer it over anything remembered.
 
 ## Commands
 
 ```
-ch search <query>              Search companies by name
-ch profile <company-number>    Company profile and status
-ch officers <company-number>   Current officers (directors, secretaries)
-ch ownership <company-number>  Persons with significant control (PSCs)
-ch filings <company-number>    Filing history
-ch charges <company-number>    Charges and mortgages
-ch insolvency <company-number> Insolvency proceedings
-ch report <company-number>     Full overview in one call (recommended starting point)
-ch check <company-number>      Due diligence red-flag scan
-ch network <officer-name>      All companies an officer is/was connected to
-ch search-officers <query>     Search for officers by name
-ch config set-key <key>        Save API key to ~/.config/companies-house/config.json
-ch config show                 Show current key source
-ch serve                       Start MCP server in stdio mode
-ch serve --http --port 3000    Start MCP server in HTTP mode
+ch search <query>                Find companies by name
+ch search-officers <query>       Find officers by name across the register
+
+ch profile <company-number>      Read a company record
+ch charges <company-number>      List registered charges
+ch insolvency <company-number>   Read the insolvency record
+ch registers <company-number>    Show where statutory registers are held
+ch exemptions <company-number>   List disclosure exemptions
+ch establishments <company-number>   UK establishments of an overseas company
+
+ch officers <company-number>     List company officers
+ch appointments <officer-id>     List one officer's appointments
+ch ownership <company-number>    List persons with significant control
+ch disqualifications <officer-id>    Check the disqualified directors register
+
+ch filings <company-number>      Read filing history
+ch filing <company-number> <transaction-id>   Read one filing in detail
+ch document <document-id>        Download the document behind a filing
+
+ch report <company-number>       Read the main records in one call
+ch check <company-number>        Screen a company against the public register
+ch network <officer-name>        Map an officer's appointments across companies
+
+ch serve                         Run the MCP server (stdio, or --http)
+ch config <set-key|show|path|clear>   Manage the saved API key
+ch tools                         List the MCP tools this build exposes
 ```
 
 ## Flags
 
 | Flag | Effect |
 |------|--------|
-| `--json` | Raw JSON — use for scripting and piping to `jq` |
-| `--md` | Markdown — use for saving to files or pasting into notes |
-| `--key <key>` | Override API key for this call only |
-| `--all` | Include resigned officers (`ch officers` only) |
-| `--category <cat>` | Filter filings by category (`ch filings` only) |
-| `--status <status>` | Filter search by company status |
-| `--sic <code>` | Filter search by SIC code |
-| `--location <loc>` | Filter search by registered location |
-| `--limit <n>` | Results per page |
-| `--id <officer-id>` | Look up officer network by ID instead of name |
+| `--json` | The structured payload. Use for scripting and `jq` |
+| `--md` | Markdown. Use for files and notes |
+| `--key <key>` | Use a specific API key for one command |
+| `--limit <n>`, `--start <n>` | Page size and offset, where the command supports paging |
+| `--all` | Include resigned officers (`ch officers`) |
+| `--category <cat>` | Filter filings (`ch filings`) |
+| `--status`, `--type`, `--sic`, `--location` | Narrow a search (`ch search`) |
+| `--id <officer-id>` | Use an officer id instead of a name (`ch network`) |
+| `--info`, `--out <path>`, `--format <fmt>` | Inspect, save, or choose a format (`ch document`) |
 
 ## Common workflows
 
-**Find a company and get its full picture:**
+**Find a company, then read it:**
+
 ```bash
 ch search "BrewDog"
-ch report 00007064
+ch profile SC311560
 ```
 
-**Check if a director has other company connections:**
+**Screen a company against the register:**
+
 ```bash
-ch network "James Watt"
-# or if you have an officer ID from ch officers output:
-ch network --id abc123xyz
+ch check SC311560
 ```
 
-**Due diligence on a supplier:**
+**Board history:**
+
 ```bash
-ch check 14604577
+ch officers 00445790 --all
 ```
 
-**Get all resigned officers (board history):**
+**Follow one person across companies.** Search first: names are not unique, and `ch network` refuses to guess between matches.
+
 ```bash
-ch officers 14604577 --all
+ch search-officers "Ken Murphy"    # returns officer ids
+ch network --id <officer-id>
 ```
 
-**Extract data for scripting:**
-```bash
-ch profile 14604577 --json | jq '.company_status'
-ch officers 14604577 --json | jq '[.officers[] | select(.resigned_on == null) | .name]'
-```
+**Get a filed document.** Check its size and formats before pulling it:
 
-**Save a report to a markdown file:**
-```bash
-ch report 14604577 --md > tesco-report.md
-```
-
-**Filter filings to accounts only:**
 ```bash
 ch filings 14604577 --category accounts
+ch document <document-id> --info
+ch document <document-id> --out ./accounts.pdf
 ```
 
-## API key setup
+**Script against the JSON:**
 
-Three sources in priority order:
-1. `--key` flag (one-off override)
-2. `COMPANIES_HOUSE_API_KEY` environment variable
-3. Config file: `ch config set-key your-key` saves to `~/.config/companies-house/config.json`
+```bash
+ch profile 00445790 --json | jq -r .company_status
+ch officers 00445790 --json | jq -r '.items[].name'
+ch check SC311560 --json | jq -r '.observations[] | "\(.severity)\t\(.detail)"'
+```
 
-Run `ch config show` to check which source is active.
+The JSON follows the Companies House response shapes, with a few added fields such as `charge_counts`, `coverage` and, for `ch check`, `observations` and `checks_performed`.
 
-## Company number formats
+## API key
 
-- **Standard:** 8 digits, zero-padded: `00445790`, `14604577`
-- **Scotland:** `SC` prefix: `SC123456`
-- **Northern Ireland:** `NI` prefix: `NI012345`
-- **LLP:** `OC` prefix: `OC301234`
+Three sources, highest priority first:
 
-Always zero-pad to 8 digits when needed (e.g., `445790` → `00445790`).
+1. `--key <key>`
+2. `COMPANIES_HOUSE_API_KEY`
+3. `~/.config/companies-house/config.json` via `ch config set-key`
 
-## Output
+`ch config show` reports the source and only the last four characters. Never echo a full key into a terminal the user might share.
 
-Default output is colour-formatted for the terminal. Switch to `--json` for machine-readable output or `--md` when the result will be read in a markdown context.
+## Company numbers
 
-When helping a user pipe or script with `ch --json`, suggest `jq` for filtering. The JSON structure matches the Companies House API response shapes directly.
+Eight characters, zero-padded: `00445790`. Scotland `SC`, Northern Ireland `NI`, LLPs `OC`, overseas `FC`. Shorter all-digit numbers are padded automatically, so `445790` works.
+
+## Exit codes
+
+`0` success, `1` the request failed, `2` bad usage, `3` no API key configured. Branch on these in scripts rather than parsing output.
+
+## Reporting results honestly
+
+Companies House records what companies file and does not verify it is accurate.
+
+`ch check` is a screening summary, not a verdict. When you relay it, say what is on the register and what was not checked. Never describe a company as clear, sound, in good standing, low risk or verified. An absence of adverse entries means only that nothing adverse has been filed.
+
+Also worth carrying into any summary:
+
+- Ceased PSCs stay in the ownership list. Check the ceased marker before calling someone a current controller.
+- An empty PSC register often has an explanation — a market-listing exemption, or a filed statement. `ch ownership` says which.
+- A registered charge shows security was granted. It says nothing about the balance owed.
+- Every list says where it stops. If it is a partial view, say so rather than presenting it as complete.

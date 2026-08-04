@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## companies-house-cli [2.0.0] / companies-house-mcp [4.0.0] — Unreleased
+
+### Added
+- **Honest coverage reporting** — `company_report` and `due_diligence_check` state what they retrieved, what they could not retrieve, and what the public register cannot establish. `get_officers` reports the API's own active and resigned totals.
+- **PSC absence explained** — an empty persons-with-significant-control register is now distinguished between a market-listing exemption, a filed statement, and a genuine absence of data.
+- **Document metadata first** — `download_filing_document` reads the document metadata before transferring anything, so it reports the available formats, page count and exact size, and refuses oversized content up front. `metadata_only` inspects a document without retrieving it.
+- **Bounded auto-pagination** — requesting officers in post pages through the list until every active officer has been found, rather than filtering a single page.
+- **Full CLI coverage** — every MCP tool now has a `ch` command, including `appointments`, `filing`, `document`, `registers`, `exemptions`, `establishments` and `disqualifications`. `ch tools` lists the registry, `ch --version` reports the version, and `ch <command> --help` is generated from the tool's own schema.
+- **Optional Cloudflare Worker** — `packages/worker` is a single-user Worker that serves the same MCP server over Streamable HTTP with a bearer token, deployed by the user into their own account.
+- **Generated documentation** — `docs/tools.md` and `docs/public/llms.txt` are generated from the tool registry, and a test fails when the prose documentation drifts from the tools.
+- **MCP SDK v2 foundation** — the server now uses the split `@modelcontextprotocol/server` and `@modelcontextprotocol/node` packages with Zod v4.
+- **Modern and legacy protocol support** — stdio and Streamable HTTP serve legacy MCP clients alongside protocol version `2026-07-28` from one tool implementation.
+- **Public server interfaces** — `companies-house-cli/mcp` exports `createCompaniesHouseMcpFactory()` and `companies-house-cli/server` exports the explicit `runServer()` entry point.
+- **Controlled HTTP binding** — `--host` defaults to `127.0.0.1`; non-loopback bindings require `MCP_BEARER_TOKEN`.
+
+### Changed
+- **Due-diligence output is a summary, not a verdict** — `due_diligence_check` reports observations drawn from filed data, the checks it ran and the checks it could not run. The `CLEAR` risk level and the "appears to be in good standing" conclusion are gone, along with the `risk_level` and `flags` fields, replaced by `observations`, `observation_counts`, `checks_performed` and `coverage`.
+- **Documents come back to the caller** — `download_filing_document` returns the document as an MCP embedded resource rather than a filesystem path on the server. Writing to disk is now opt-in through `save_to`; `return_as`, `save_dir` and `COMPANIES_HOUSE_DOWNLOAD_DIR` are removed.
+- **Counts come from the API, not from a page** — outstanding charges use the aggregate satisfied and part-satisfied totals, and officer counts use `active_count` and `resigned_count`, so they stay correct for companies with more records than fit in one request.
+- **Deprecated profile fields retired** — company records read the `links` sub-resources and `accounts.next_accounts.overdue` instead of `has_charges`, `has_insolvency_history` and `accounts.overdue`, and describe recorded charges as history rather than current encumbrance.
+- **`company_status_detail` is surfaced**, so a company that is active with a proposal to strike off is no longer reported as simply active.
+- **`officer_network` refuses to guess** — an ambiguous name returns the matches and asks for an officer id instead of silently using the first result.
+- **Rate limits** — the client reads the Companies House quota headers and waits out a 429 only when the API says the window is about to reset, reporting it otherwise.
+- **Transport-neutral server** — the shared MCP factory owns the API client, cache, rate limiter, and all 18 tool registrations while transport runners create isolated server sessions.
+- **Dependency baseline** — updated build and test tooling within supported major versions and pinned the Node adapter's Hono peer to a patched release.
+- **Tool contracts** — all tools now have titles and complete Zod input schemas. `download_filing_document` is correctly marked as capable of writing to disk.
+- **Structured failures** — tool errors include safe structured metadata describing the failure kind, upstream status, endpoint, and retryability.
+- **Package identity** — the MCP wrapper and CLI server supply their own versions instead of reporting the CLI package version for both entry points.
+- **HTTP health response** — `/health` reports the 18-tool inventory and supported protocol families without exposing authentication state.
+- **Bring your own key** — active documentation consistently describes local or controlled private operation with each user supplying their own Companies House API key.
+
+### Removed
+- **Incomplete OAuth façade** — removed the custom OAuth discovery, authorisation, PKCE, and token endpoints. Deprecated `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, and `MCP_PUBLIC_URL` settings now produce migration guidance at startup.
+- **Wildcard CORS** — removed permissive browser CORS handling from the private HTTP transport.
+
+### Fixed
+- **Active officers could be missed entirely** — filtering one page for officers in post reported none for a company whose active officers fall past the first page.
+- **PSC exemption misread as a compliance gap** — a listed company exempt from the PSC regime was flagged as having no ownership on record.
+- **Dates shifted a day** west of UTC, because calendar dates were formatted in the host's timezone.
+- **Document API metadata used the wrong host** — a dead endpoint helper pointed at the main API rather than the document service.
+- **Wrong company numbers in the documentation and test fixtures** — examples labelled as BrewDog, Tesco and Anthropic pointed at unrelated companies.
+- **Tool inventory drift** — server, CLI, tests, documentation, and bundled skills now use the same 18-tool registry.
+- **Rate-limit message** — an upstream `429` is reported as retryable instead of incorrectly claiming the request was queued.
+- **Factory credential consistency** — document metadata and content requests now use the API key supplied to the MCP factory.
+- **Loopback HTTP hardening** — local HTTP requests validate their `Host` and `Origin` headers to prevent DNS rebinding.
+- **Release ordering** — the wrapper package is no longer published when the CLI package publication fails.
+- **Clean release artefacts** — package builds now remove stale output before compiling, preventing removed server files from leaking into tarballs.
+
 ## companies-house-cli [1.2.0] / companies-house-mcp [3.2.0] — 2026-05-08
 
 ### Added

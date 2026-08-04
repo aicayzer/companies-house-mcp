@@ -1,28 +1,52 @@
 import { z } from 'zod';
-import { registerTool, TOOL_ANNOTATIONS, makeTextResult, makeErrorResult } from './registry.js';
+import {
+  registerTool,
+  TOOL_ANNOTATIONS,
+  makeTextResult,
+  makeErrorResult,
+  isNotFound,
+} from './registry.js';
 import { getFilingHistory } from '../api/endpoints/filing.js';
-import { formatFilings } from '../formatters/index.js';
+import { formatFilings, formatPagination, emptyPageText } from '../formatters/index.js';
+import { companyNumberSchema, pageSizeSchema, startIndexSchema } from './shared.js';
 import type { APIClient } from '../api/client.js';
 
+export const FILING_CATEGORIES = [
+  'accounts',
+  'address',
+  'annual-return',
+  'capital',
+  'change-of-name',
+  'confirmation-statement',
+  'incorporation',
+  'insolvency',
+  'liquidation',
+  'miscellaneous',
+  'mortgage',
+  'officers',
+  'persons-with-significant-control',
+  'resolution',
+] as const;
+
 const shape = {
-  company_number: z.string().describe('Companies House company number'),
+  company_number: companyNumberSchema,
   category: z
     .string()
     .optional()
-    .describe(
-      'Filter by category: accounts, annual-return, capital, change-of-name, confirmation-statement, incorporation, liquidation, miscellaneous, mortgage, officers, resolution'
-    ),
-  items_per_page: z.number().min(1).max(100).default(25).describe('Results per page'),
-  start_index: z.number().min(0).default(0).describe('Pagination offset'),
+    .describe(`Restrict to one filing category: ${FILING_CATEGORIES.join(', ')}.`),
+  items_per_page: pageSizeSchema(25),
+  start_index: startIndexSchema,
 };
 const schema = z.object(shape);
 
 registerTool({
   name: 'get_filings',
+  title: 'Get Filing History',
   description:
-    'Get filing history for a UK company. Includes accounts, annual returns, officer changes, mortgage registrations, and all other filings. Use the category parameter to filter by type. Returns transaction IDs for retrieving specific documents.',
-  inputSchema: shape,
+    "Read a company's filing history: accounts, confirmation statements, officer changes, charge registrations, resolutions and everything else it has filed. Each entry carries a transaction id and, where a scanned or rendered document exists, a document id. Pass that document id to download_filing_document to retrieve the document itself.",
+  inputSchema: schema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'filings',
   async execute(client: APIClient, params: unknown) {
     const input = schema.parse(params);
     try {
@@ -31,12 +55,30 @@ registerTool({
         start_index: input.start_index,
         category: input.category,
       });
-      return makeTextResult(
-        formatFilings(result.items ?? [], result.total_count ?? 0),
-        result as unknown as Record<string, unknown>
-      );
+      const items = result.items ?? [];
+      const text = [
+        items.length
+          ? formatFilings(items, result.total_count ?? items.length)
+          : emptyPageText('filings', input.start_index, result.total_count),
+        formatPagination({
+          start_index: input.start_index,
+          items_per_page: input.items_per_page,
+          returned: items.length,
+          total: result.total_count,
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      return makeTextResult(text, result as unknown as Record<string, unknown>);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      if (isNotFound(err)) {
+        return makeTextResult('Companies House holds no filing history for this company.', {
+          items: [],
+          total_count: 0,
+        });
+      }
+      return makeErrorResult(err);
     }
   },
 });

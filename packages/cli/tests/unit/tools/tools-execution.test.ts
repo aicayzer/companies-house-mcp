@@ -1,16 +1,9 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { APIClient } from '../../../src/api/client.js';
+import { APIClient, CompaniesHouseAPIError } from '../../../src/api/client.js';
 import { getTool } from '../../../src/tools/registry.js';
+import { textOf } from '../../helpers.js';
 
-// Import tools to trigger registration
-import '../../../src/tools/search.js';
-import '../../../src/tools/company.js';
-import '../../../src/tools/officers.js';
-import '../../../src/tools/ownership.js';
-import '../../../src/tools/filings.js';
-import '../../../src/tools/financial.js';
-import '../../../src/tools/extended.js';
-import '../../../src/tools/composite.js';
+import '../../../src/tools/all.js';
 
 const MOCK_PROFILE = {
   company_name: 'ACME LTD',
@@ -18,20 +11,41 @@ const MOCK_PROFILE = {
   company_status: 'active',
   type: 'ltd',
   date_of_creation: '2020-01-01',
-  registered_office_address: { address_line_1: '1 Test St', locality: 'London', postal_code: 'EC1A 1BB' },
+  registered_office_address: {
+    address_line_1: '1 Test St',
+    locality: 'London',
+    postal_code: 'EC1A 1BB',
+  },
   sic_codes: ['62011'],
-  accounts: { overdue: false },
+  accounts: { next_accounts: { due_on: '2026-09-30', overdue: false } },
   confirmation_statement: { overdue: false },
-  has_insolvency_history: false,
-  has_charges: false,
+  links: {
+    self: '/company/12345678',
+    charges: '/company/12345678/charges',
+    filing_history: '/company/12345678/filing-history',
+    officers: '/company/12345678/officers',
+    persons_with_significant_control: '/company/12345678/persons-with-significant-control',
+  },
 };
 
 const MOCK_OFFICERS = {
   items: [
-    { name: 'SMITH, John', officer_role: 'director', appointed_on: '2020-01-01', nationality: 'British' },
-    { name: 'DOE, Jane', officer_role: 'secretary', appointed_on: '2020-06-01', resigned_on: '2023-01-01' },
+    {
+      name: 'SMITH, John',
+      officer_role: 'director',
+      appointed_on: '2020-01-01',
+      nationality: 'British',
+    },
+    {
+      name: 'DOE, Jane',
+      officer_role: 'secretary',
+      appointed_on: '2020-06-01',
+      resigned_on: '2023-01-01',
+    },
   ],
   total_results: 2,
+  active_count: 1,
+  resigned_count: 1,
   items_per_page: 50,
   kind: 'officer-list',
   start_index: 0,
@@ -47,6 +61,8 @@ const MOCK_PSCS = {
     },
   ],
   total_results: 1,
+  active_count: 1,
+  ceased_count: 0,
   items_per_page: 25,
   kind: 'persons-with-significant-control#list',
   start_index: 0,
@@ -54,16 +70,40 @@ const MOCK_PSCS = {
 
 const MOCK_CHARGES = {
   items: [
-    { status: 'outstanding', classification: { description: 'Debenture', type: 'charge' }, created_on: '2021-01-01' },
-    { status: 'fully-satisfied', classification: { description: 'Mortgage', type: 'charge' }, created_on: '2019-01-01', satisfied_on: '2022-01-01' },
+    {
+      status: 'outstanding',
+      classification: { description: 'Debenture', type: 'charge' },
+      created_on: '2021-01-01',
+    },
+    {
+      status: 'fully-satisfied',
+      classification: { description: 'Mortgage', type: 'charge' },
+      created_on: '2019-01-01',
+      satisfied_on: '2022-01-01',
+    },
   ],
   total_count: 2,
+  satisfied_count: 1,
+  part_satisfied_count: 0,
+  unfiltered_count: 2,
 };
 
 const MOCK_FILINGS = {
   items: [
-    { transaction_id: 'txn1', date: '2024-01-15', type: 'AA', description: 'Annual accounts', category: 'accounts' },
-    { transaction_id: 'txn2', date: '2024-03-01', type: 'CS01', description: 'Confirmation statement', category: 'confirmation-statement' },
+    {
+      transaction_id: 'txn1',
+      date: '2024-01-15',
+      type: 'AA',
+      description: 'Annual accounts',
+      category: 'accounts',
+    },
+    {
+      transaction_id: 'txn2',
+      date: '2024-03-01',
+      type: 'CS01',
+      description: 'Confirmation statement',
+      category: 'confirmation-statement',
+    },
   ],
   total_count: 2,
   items_per_page: 25,
@@ -73,8 +113,19 @@ const MOCK_FILINGS = {
 
 const MOCK_SEARCH = {
   items: [
-    { title: 'ACME LTD', company_number: '12345678', company_status: 'active', company_type: 'ltd', date_of_creation: '2020-01-01' },
-    { title: 'ACME PLC', company_number: '00000002', company_status: 'dissolved', company_type: 'plc' },
+    {
+      title: 'ACME LTD',
+      company_number: '12345678',
+      company_status: 'active',
+      company_type: 'ltd',
+      date_of_creation: '2020-01-01',
+    },
+    {
+      title: 'ACME PLC',
+      company_number: '00000002',
+      company_status: 'dissolved',
+      company_type: 'plc',
+    },
   ],
   total_results: 2,
   items_per_page: 20,
@@ -84,7 +135,11 @@ const MOCK_SEARCH = {
 
 const MOCK_OFFICER_SEARCH = {
   items: [
-    { title: 'SMITH, John', appointment_count: 3, links: { self: '/officers/abc123/appointments' } },
+    {
+      title: 'SMITH, John',
+      appointment_count: 3,
+      links: { self: '/officers/abc123/appointments' },
+    },
   ],
   total_results: 1,
   items_per_page: 20,
@@ -97,13 +152,21 @@ const MOCK_APPOINTMENTS = {
     {
       officer_role: 'director',
       appointed_on: '2020-01-01',
-      appointed_to: { company_number: '12345678', company_name: 'ACME LTD', company_status: 'active' },
+      appointed_to: {
+        company_number: '12345678',
+        company_name: 'ACME LTD',
+        company_status: 'active',
+      },
     },
     {
       officer_role: 'director',
       appointed_on: '2018-01-01',
       resigned_on: '2022-01-01',
-      appointed_to: { company_number: '99999999', company_name: 'OLD CO LTD', company_status: 'dissolved' },
+      appointed_to: {
+        company_number: '99999999',
+        company_name: 'OLD CO LTD',
+        company_status: 'dissolved',
+      },
     },
   ],
   total_results: 2,
@@ -130,9 +193,10 @@ function createMockClient(): APIClient {
     if (path.match(/\/company\/[^/]+$/)) return MOCK_PROFILE;
     if (path.match(/\/officers\/[^/]+\/appointments/)) return MOCK_APPOINTMENTS;
     if (path.match(/\/disqualified-officers/)) {
-      const error = new Error('Not found') as Error & { statusCode: number };
-      error.statusCode = 404;
-      throw error;
+      throw new CompaniesHouseAPIError('Not found', 404, path);
+    }
+    if (path.match(/persons-with-significant-control-statements/)) {
+      throw new CompaniesHouseAPIError('Not found', 404, path);
     }
     throw new Error(`Unexpected path: ${path}`);
   });
@@ -155,9 +219,9 @@ describe('Tool Execution (mocked)', () => {
     const tool = getTool('search_companies')!;
     const result = await tool.execute(client, { query: 'Acme' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('ACME LTD');
-    expect(result.content[0]!.text).toContain('ACME PLC');
-    expect(result.content[0]!.text).toContain('Found 2 companies');
+    expect(textOf(result)).toContain('ACME LTD');
+    expect(textOf(result)).toContain('ACME PLC');
+    expect(textOf(result)).toContain('Found 2 companies');
     expect(result.structuredContent).toBeDefined();
   });
 
@@ -165,136 +229,201 @@ describe('Tool Execution (mocked)', () => {
     const tool = getTool('get_company_profile')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('ACME LTD');
-    expect(result.content[0]!.text).toContain('Active');
-    expect(result.content[0]!.text).toContain('Private Limited Company');
-    expect(result.content[0]!.text).toContain('62011');
+    expect(textOf(result)).toContain('ACME LTD');
+    expect(textOf(result)).toContain('Active');
+    expect(textOf(result)).toContain('Private Limited Company');
+    expect(textOf(result)).toContain('62011');
   });
 
   it('get_officers filters resigned by default', async () => {
     const tool = getTool('get_officers')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('SMITH, John');
-    expect(result.content[0]!.text).not.toContain('DOE, Jane'); // resigned, filtered out
+    expect(textOf(result)).toContain('SMITH, John');
+    expect(textOf(result)).not.toContain('DOE, Jane'); // resigned, filtered out
   });
 
   it('get_officers includes resigned when requested', async () => {
     const tool = getTool('get_officers')!;
-    const result = await tool.execute(client, { company_number: '12345678', include_resigned: true });
+    const result = await tool.execute(client, {
+      company_number: '12345678',
+      include_resigned: true,
+    });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('SMITH, John');
-    expect(result.content[0]!.text).toContain('DOE, Jane');
+    expect(textOf(result)).toContain('SMITH, John');
+    expect(textOf(result)).toContain('DOE, Jane');
   });
 
   it('get_ownership shows PSCs with control descriptions', async () => {
     const tool = getTool('get_ownership')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('SMITH, John');
-    expect(result.content[0]!.text).toContain('75-100%');
+    expect(textOf(result)).toContain('SMITH, John');
+    expect(textOf(result)).toContain('75-100%');
   });
 
   it('get_filings returns filing history', async () => {
     const tool = getTool('get_filings')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('Annual accounts');
-    expect(result.content[0]!.text).toContain('Confirmation statement');
+    expect(textOf(result)).toContain('Annual accounts');
+    expect(textOf(result)).toContain('Confirmation statement');
   });
 
   it('get_charges returns charge data', async () => {
     const tool = getTool('get_charges')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('Debenture');
-    expect(result.content[0]!.text).toContain('outstanding');
+    expect(textOf(result)).toContain('Debenture');
+    expect(textOf(result)).toContain('outstanding');
   });
 
   it('get_insolvency handles empty cases', async () => {
     const tool = getTool('get_insolvency')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('No insolvency');
+    expect(textOf(result)).toContain('No insolvency');
   });
 
   it('search_officers returns results', async () => {
     const tool = getTool('search_officers')!;
     const result = await tool.execute(client, { query: 'Smith' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('SMITH, John');
-    expect(result.content[0]!.text).toContain('abc123');
+    expect(textOf(result)).toContain('SMITH, John');
+    expect(textOf(result)).toContain('abc123');
   });
 
   it('get_appointments returns officer appointments', async () => {
     const tool = getTool('get_appointments')!;
     const result = await tool.execute(client, { officer_id: 'abc123' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('ACME LTD');
-    expect(result.content[0]!.text).toContain('OLD CO LTD');
-    expect(result.content[0]!.text).toContain('John SMITH');
+    expect(textOf(result)).toContain('ACME LTD');
+    expect(textOf(result)).toContain('OLD CO LTD');
+    expect(textOf(result)).toContain('John SMITH');
   });
 
-  it('company_report generates comprehensive report', async () => {
+  it('company_report covers every section and states its coverage', async () => {
     const tool = getTool('company_report')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    const text = result.content[0]!.text;
-    // Should contain all sections
+    const text = textOf(result);
+
     expect(text).toContain('ACME LTD');
-    expect(text).toContain('Officers');
+    expect(text).toContain('Officers currently in post');
     expect(text).toContain('Ownership');
     expect(text).toContain('Charges');
-    expect(text).toContain('Filings');
+    expect(text).toContain('Most recent filings');
     expect(text).toContain('Insolvency');
-    // Structured content
+    expect(text).toContain('Coverage');
+
     expect(result.structuredContent?.profile).toBeDefined();
     expect(result.structuredContent?.officers).toBeDefined();
     expect(result.structuredContent?.pscs).toBeDefined();
+    expect(result.structuredContent?.coverage).toBeDefined();
   });
 
-  it('due_diligence_check identifies risk flags', async () => {
+  it('company_report states what the register does not establish', async () => {
+    const text = textOf(
+      await getTool('company_report')!.execute(client, { company_number: '12345678' })
+    );
+    expect(text).toContain('What this does not tell you');
+    expect(text).toContain('does not verify');
+  });
+
+  it('company_report skips sub-resources the profile does not link to', async () => {
+    const result = await getTool('company_report')!.execute(client, { company_number: '12345678' });
+    // The mock profile links to charges but not insolvency, so insolvency is
+    // reported as absent without a request that would 404.
+    const paths = vi.mocked(client.get).mock.calls.map(([path]) => path as string);
+    expect(paths.some(path => path.includes('/charges'))).toBe(true);
+    expect(paths.some(path => path.includes('/insolvency'))).toBe(false);
+    expect(textOf(result)).toContain('No insolvency history is recorded');
+  });
+
+  it('due_diligence_check reports observations, checks and limitations', async () => {
     const tool = getTool('due_diligence_check')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('Due Diligence Report');
-    expect(result.structuredContent?.risk_level).toBeDefined();
-    expect(result.structuredContent?.flags).toBeDefined();
-    // Should flag: outstanding charges, sole director
-    const flags = result.structuredContent?.flags as Array<{ category: string }>;
-    expect(flags.some(f => f.category === 'Charges')).toBe(true);
-    expect(flags.some(f => f.category === 'Officers')).toBe(true); // sole director
+
+    const text = textOf(result);
+    expect(text).toContain('Public register screening');
+    expect(text).toContain('Checks performed');
+    expect(text).toContain('What this does not tell you');
+
+    const observations = result.structuredContent?.observations as Array<{ category: string }>;
+    expect(observations.some(o => o.category === 'Charges')).toBe(true);
+    expect(observations.some(o => o.category === 'Officers')).toBe(true);
+    expect(result.structuredContent?.checks_performed).toBeDefined();
+    expect(result.structuredContent?.observation_counts).toBeDefined();
   });
 
-  it('officer_network maps connections by ID', async () => {
+  it('due_diligence_check never presents a verdict about the company', async () => {
+    const text = textOf(
+      await getTool('due_diligence_check')!.execute(client, { company_number: '12345678' })
+    ).toLowerCase();
+
+    // Verdict language, not the word "clearance" in the disclaimer that
+    // explicitly denies giving one.
+    const forbidden = [
+      /good standing/,
+      /risk level/,
+      // A tally in scorecard shape is what a reader compresses into a score.
+      /\d+ higher, \d+ moderate/,
+      /\bno red flags\b/,
+      /\brisk[:\s]+(high|medium|low|clear)\b/,
+      /appears to be (sound|safe|legitimate|in good)/,
+      /\bcleared\b/,
+      /\bwe verified\b/,
+    ];
+    for (const pattern of forbidden) {
+      expect(text, `output should not match ${pattern}`).not.toMatch(pattern);
+    }
+
+    // And it must actively say what it is not.
+    expect(text).toContain('not a verification');
+  });
+
+  it('due_diligence_check counts outstanding charges from the aggregate totals', async () => {
+    const result = await getTool('due_diligence_check')!.execute(client, {
+      company_number: '12345678',
+    });
+    const observations = result.structuredContent?.observations as Array<{ detail: string }>;
+    // 2 charges, 1 satisfied, 0 part-satisfied leaves 1 outstanding.
+    expect(observations.some(o => o.detail.startsWith('1 outstanding charge'))).toBe(true);
+  });
+
+  it('officer_network maps appointments by id', async () => {
     const tool = getTool('officer_network')!;
     const result = await tool.execute(client, { officer_id: 'abc123' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('Officer Network');
-    expect(result.content[0]!.text).toContain('ACME LTD');
-    expect(result.content[0]!.text).toContain('OLD CO LTD');
-    expect(result.structuredContent?.active_count).toBe(1);
-    expect(result.structuredContent?.resigned_count).toBe(1);
+    const text = textOf(result);
+    expect(text).toContain('Appointments for');
+    expect(text).toContain('ACME LTD');
+    expect(text).toContain('OLD CO LTD');
+    expect(result.structuredContent?.current_count).toBe(1);
+    expect(result.structuredContent?.past_count).toBe(1);
   });
 
-  it('officer_network maps connections by name', async () => {
-    const tool = getTool('officer_network')!;
-    const result = await tool.execute(client, { officer_name: 'Smith' });
+  it('officer_network resolves an unambiguous name', async () => {
+    const result = await getTool('officer_network')!.execute(client, { officer_name: 'Smith' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('Officer Network');
+    expect(textOf(result)).toContain('Appointments for');
+    expect(result.structuredContent?.officer_id).toBe('abc123');
   });
 
-  it('get_officer_disqualifications handles 404 gracefully', async () => {
+  it('get_officer_disqualifications reports an empty register without claiming clearance', async () => {
     const tool = getTool('get_officer_disqualifications')!;
     const result = await tool.execute(client, { officer_id: 'abc123' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('No disqualifications');
+    const text = textOf(result);
+    expect(text).toContain('No disqualification is recorded');
+    expect(text).toContain('not a confirmation');
   });
 
   it('get_uk_establishments handles empty list', async () => {
     const tool = getTool('get_uk_establishments')!;
     const result = await tool.execute(client, { company_number: '12345678' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0]!.text).toContain('No UK establishments');
+    expect(textOf(result)).toContain('No UK establishments');
   });
 });

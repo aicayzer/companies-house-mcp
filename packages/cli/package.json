@@ -1,29 +1,33 @@
 {
   "name": "companies-house-cli",
-  "version": "1.2.0",
-  "description": "CLI tool for the UK Companies House API — company search, profiles, officers, filings, ownership, and due diligence",
+  "version": "2.0.0",
+  "description": "CLI for the UK Companies House public register — company search, records, officers, ownership, filings and filed documents. Bring your own free API key.",
   "type": "module",
   "exports": {
-    "./server": "./dist/server/index.js"
+    "./mcp": "./dist/server/mcp.js",
+    "./server": "./dist/server/index.js",
+    "./secret": "./dist/server/secret.js",
+    "./tools": "./dist/tools/registry.js"
   },
   "bin": {
     "ch": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm run clean && tsc",
     "build:watch": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit/",
     "test:integration": "vitest run tests/integration/",
+    "test:package": "vitest run tests/package-stdio.test.ts",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write src/ tests/",
     "format:check": "prettier --check src/ tests/",
     "clean": "rm -rf dist/ *.tsbuildinfo",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "pnpm run clean && pnpm run build && pnpm test"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "prepublishOnly": "pnpm run build && pnpm test"
   },
   "keywords": [
     "companies-house",
@@ -53,18 +57,21 @@
     "url": "https://github.com/aicayzer/companies-house-mcp/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "zod": "^3.25.50"
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "hono": "^4.12.25",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^22.15.29",
-    "@typescript-eslint/eslint-plugin": "^8.33.1",
-    "@typescript-eslint/parser": "^8.33.1",
-    "eslint": "^9.28.0",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@types/node": "^22.20.1",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/parser": "^8.66.0",
+    "eslint": "^9.39.5",
     "globals": "^14.0.0",
-    "prettier": "^3.5.3",
-    "typescript": "^5.8.3",
-    "vitest": "^3.2.1"
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   },
   "files": [
     "dist/",

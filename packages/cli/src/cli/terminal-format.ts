@@ -18,15 +18,19 @@ const c = {
 function colourStatus(text: string): string {
   if (/\bActive\b/.test(text)) return text.replace('Active', `${c.green}Active${c.reset}`);
   if (/\bDissolved\b/.test(text)) return text.replace('Dissolved', `${c.red}Dissolved${c.reset}`);
-  if (/\bIn Liquidation\b/.test(text)) return text.replace('In Liquidation', `${c.red}In Liquidation${c.reset}`);
-  if (/\bIn Receivership\b/.test(text)) return text.replace('In Receivership', `${c.red}In Receivership${c.reset}`);
-  if (/\bIn Administration\b/.test(text)) return text.replace('In Administration', `${c.red}In Administration${c.reset}`);
+  if (/\bIn Liquidation\b/.test(text))
+    return text.replace('In Liquidation', `${c.red}In Liquidation${c.reset}`);
+  if (/\bIn Receivership\b/.test(text))
+    return text.replace('In Receivership', `${c.red}In Receivership${c.reset}`);
+  if (/\bIn Administration\b/.test(text))
+    return text.replace('In Administration', `${c.red}In Administration${c.reset}`);
   return text;
 }
 
 function colourRisk(text: string): string {
   if (/\bHIGH\b/.test(text)) return text.replace('HIGH', `${c.red}${c.bold}HIGH${c.reset}`);
-  if (/\bMEDIUM\b/.test(text)) return text.replace('MEDIUM', `${c.yellow}${c.bold}MEDIUM${c.reset}`);
+  if (/\bMEDIUM\b/.test(text))
+    return text.replace('MEDIUM', `${c.yellow}${c.bold}MEDIUM${c.reset}`);
   if (/\bLOW\b/.test(text)) return text.replace('LOW', `${c.green}LOW${c.reset}`);
   if (/\bCLEAR\b/.test(text)) return text.replace('CLEAR', `${c.green}${c.bold}CLEAR${c.reset}`);
   return text;
@@ -92,7 +96,13 @@ export function markdownToTerminal(markdown: string): string {
     // List item: "- **Key:** Value"
     if (line.startsWith('- **')) {
       const content = stripBold(line.slice(2));
-      out.push(colourStatus(colourRisk(`  ${c.bold}${content.split(':')[0]}:${c.reset}${content.slice(content.indexOf(':') + 1)}`)));
+      out.push(
+        colourStatus(
+          colourRisk(
+            `  ${c.bold}${content.split(':')[0]}:${c.reset}${content.slice(content.indexOf(':') + 1)}`
+          )
+        )
+      );
       continue;
     }
 

@@ -2,21 +2,22 @@ import { z } from 'zod';
 import { registerTool, TOOL_ANNOTATIONS, makeTextResult, makeErrorResult } from './registry.js';
 import { getCompanyProfile } from '../api/endpoints/company.js';
 import { formatCompanyProfile } from '../formatters/index.js';
+import { companyNumberSchema } from './shared.js';
 import type { APIClient } from '../api/client.js';
 
 const shape = {
-  company_number: z
-    .string()
-    .describe('Companies House company number (e.g. "00445790", "SC123456", "OC301234")'),
+  company_number: companyNumberSchema,
 };
 const schema = z.object(shape);
 
 registerTool({
   name: 'get_company_profile',
+  title: 'Get Company Profile',
   description:
-    'Get the full profile for a UK company: name, status, type, registered address, SIC codes, accounts dates, confirmation statement dates, previous names, and flags (insolvency, charges, liquidation). Use the company number from search_companies.',
-  inputSchema: shape,
+    'Read the Companies House register entry for one UK company: registered name, number, status and status detail, company type, incorporation date, registered office address, SIC codes, accounts and confirmation statement dates, and previous names. Use search_companies first if you only know the name.',
+  inputSchema: schema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'company',
   async execute(client: APIClient, params: unknown) {
     const { company_number } = schema.parse(params);
     try {
@@ -26,9 +27,9 @@ registerTool({
         profile as unknown as Record<string, unknown>
       );
     } catch (err) {
-      return makeErrorResult(
-        `${(err as Error).message}. Try search_companies to find the correct company number.`
-      );
+      return makeErrorResult(err, {
+        notFoundSuffix: 'Use search_companies to find the correct company number.',
+      });
     }
   },
 });

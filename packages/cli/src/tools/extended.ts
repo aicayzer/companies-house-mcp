@@ -1,213 +1,285 @@
 import { z } from 'zod';
-import { registerTool, TOOL_ANNOTATIONS, makeTextResult, makeErrorResult } from './registry.js';
+import {
+  registerTool,
+  TOOL_ANNOTATIONS,
+  makeTextResult,
+  makeErrorResult,
+  isNotFound,
+} from './registry.js';
 import { getCompanyRegisters } from '../api/endpoints/company.js';
 import { getExemptions, getUKEstablishments } from '../api/endpoints/exemptions.js';
-import { getNaturalDisqualification, getCorporateDisqualification } from '../api/endpoints/officers.js';
+import {
+  getNaturalDisqualification,
+  getCorporateDisqualification,
+} from '../api/endpoints/officers.js';
 import { getFilingItem } from '../api/endpoints/filing.js';
-import { formatDate, formatAddress } from '../formatters/index.js';
+import {
+  formatDate,
+  formatAddress,
+  formatCompanyStatus,
+  filingDocumentId,
+} from '../formatters/index.js';
+import { companyNumberSchema, officerIdSchema } from './shared.js';
 import type { APIClient } from '../api/client.js';
 
 // ── get_company_registers ───────────────────────────────────────────────
-const registersShape = {
-  company_number: z.string().describe('Companies House company number'),
-};
-const registersSchema = z.object(registersShape);
+const registersSchema = z.object({ company_number: companyNumberSchema });
 
 registerTool({
   name: 'get_company_registers',
+  title: 'Get Company Registers',
   description:
-    'Get the statutory registers for a UK company — where the company holds its registers of directors, secretaries, members, and PSCs. Shows whether registers are held at Companies House or elsewhere.',
-  inputSchema: registersShape,
+    'Report where a company keeps its statutory registers of directors, secretaries, members and PSCs — at Companies House or at its own address. Companies House holds no register record for most companies, which the response reports as an absence rather than an error.',
+  inputSchema: registersSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'company',
   async execute(client: APIClient, params: unknown) {
     const { company_number } = registersSchema.parse(params);
     try {
       const result = await getCompanyRegisters(client, company_number);
-      const lines: string[] = ['## Company Registers\n'];
-      if (result.registers) {
-        for (const [key, reg] of Object.entries(result.registers)) {
-          lines.push(`### ${key}`);
-          lines.push(`Type: ${reg.register_type}`);
-          for (const item of reg.items) {
-            lines.push(`- Moved to ${item.register_moved_to} on ${formatDate(item.moved_on)}`);
-          }
-          lines.push('');
+      const registers = Object.entries(result.registers ?? {});
+      if (!registers.length) {
+        return makeTextResult(
+          'Companies House holds no statutory register record for this company. The company keeps its own registers.',
+          result as unknown as Record<string, unknown>
+        );
+      }
+
+      const lines: string[] = ['## Statutory registers', ''];
+      for (const [key, register] of registers) {
+        lines.push(`### ${key.replace(/_/g, ' ')}`);
+        lines.push(`- **Held at:** ${register.register_type}`);
+        for (const item of register.items) {
+          lines.push(`- Moved to ${item.register_moved_to} on ${formatDate(item.moved_on)}`);
         }
-      } else {
-        lines.push('No register information available.');
+        lines.push('');
       }
       return makeTextResult(lines.join('\n'), result as unknown as Record<string, unknown>);
     } catch (err) {
-      if ((err as { statusCode?: number }).statusCode === 404) {
-        return makeTextResult('No register information available for this company.', {});
+      if (isNotFound(err)) {
+        return makeTextResult(
+          'Companies House holds no statutory register record for this company. The company keeps its own registers.',
+          { registers: {} }
+        );
       }
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── get_exemptions ──────────────────────────────────────────────────────
-const exemptionsShape = {
-  company_number: z.string().describe('Companies House company number'),
-};
-const exemptionsSchema = z.object(exemptionsShape);
+const exemptionsSchema = z.object({ company_number: companyNumberSchema });
 
 registerTool({
   name: 'get_exemptions',
+  title: 'Get Company Exemptions',
   description:
-    'Get exemptions for a UK company (e.g. exemption from filing full accounts, PSC exemptions). Most companies have no exemptions.',
-  inputSchema: exemptionsShape,
+    'List the disclosure exemptions recorded for a UK company, with the dates each applies from and to. The most common is exemption from the persons-with-significant-control requirements for companies whose shares trade on a regulated market. Most companies have none.',
+  inputSchema: exemptionsSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'company',
   async execute(client: APIClient, params: unknown) {
     const { company_number } = exemptionsSchema.parse(params);
     try {
       const result = await getExemptions(client, company_number);
-      const lines: string[] = ['## Company Exemptions\n'];
-      if (result.exemptions) {
-        for (const [key, exemption] of Object.entries(result.exemptions)) {
-          lines.push(`### ${key}`);
-          lines.push(`Type: ${exemption.exemption_type}`);
-          for (const item of exemption.items) {
-            lines.push(`- From: ${formatDate(item.exempt_from)}${item.exempt_to ? ` to ${formatDate(item.exempt_to)}` : ' (ongoing)'}`);
-          }
-          lines.push('');
+      const exemptions = Object.entries(result.exemptions ?? {});
+      if (!exemptions.length) {
+        return makeTextResult(
+          'No exemptions are recorded for this company.',
+          result as unknown as Record<string, unknown>
+        );
+      }
+
+      const lines: string[] = ['## Exemptions', ''];
+      for (const [key, exemption] of exemptions) {
+        lines.push(`### ${key.replace(/_/g, ' ')}`);
+        lines.push(`- **Type:** ${exemption.exemption_type}`);
+        for (const item of exemption.items) {
+          lines.push(
+            `- From ${formatDate(item.exempt_from)}${item.exempt_to ? ` to ${formatDate(item.exempt_to)}` : ' (ongoing)'}`
+          );
         }
-      } else {
-        lines.push('No exemptions.');
+        lines.push('');
       }
       return makeTextResult(lines.join('\n'), result as unknown as Record<string, unknown>);
     } catch (err) {
-      if ((err as { statusCode?: number }).statusCode === 404) {
-        return makeTextResult('No exemptions for this company.', {});
+      if (isNotFound(err)) {
+        return makeTextResult('No exemptions are recorded for this company.', { exemptions: {} });
       }
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── get_uk_establishments ───────────────────────────────────────────────
-const establishmentsShape = {
-  company_number: z.string().describe('Companies House company number (typically an overseas company)'),
-};
-const establishmentsSchema = z.object(establishmentsShape);
+const establishmentsSchema = z.object({
+  company_number: companyNumberSchema,
+});
 
 registerTool({
   name: 'get_uk_establishments',
+  title: 'Get UK Establishments',
   description:
-    'Get UK establishments of an overseas company. Returns a list of UK branches/establishments registered at Companies House.',
-  inputSchema: establishmentsShape,
+    'List the UK establishments registered by an overseas company — its UK branches, each with its own company number and status. Applies to overseas companies, typically those with an FC-prefixed number; UK-incorporated companies have none.',
+  inputSchema: establishmentsSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'company',
   async execute(client: APIClient, params: unknown) {
     const { company_number } = establishmentsSchema.parse(params);
     try {
       const result = await getUKEstablishments(client, company_number);
       const items = result.items ?? [];
       if (!items.length) {
-        return makeTextResult('No UK establishments found.', result as unknown as Record<string, unknown>);
+        return makeTextResult(
+          'No UK establishments are registered for this company.',
+          result as unknown as Record<string, unknown>
+        );
       }
-      const lines = [`${items.length} UK establishment(s):\n`];
-      for (const est of items) {
-        lines.push(`### ${est.company_name}`);
-        lines.push(`- **Number:** ${est.company_number}`);
-        lines.push(`- **Status:** ${est.company_status}`);
-        if (est.locality) lines.push(`- **Location:** ${est.locality}`);
+      const lines = [`${items.length} UK establishment(s):`, ''];
+      for (const establishment of items) {
+        lines.push(`### ${establishment.company_name}`);
+        lines.push(`- **Number:** ${establishment.company_number}`);
+        lines.push(`- **Status:** ${formatCompanyStatus(establishment.company_status)}`);
+        if (establishment.locality) lines.push(`- **Location:** ${establishment.locality}`);
         lines.push('');
       }
       return makeTextResult(lines.join('\n'), result as unknown as Record<string, unknown>);
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      if (isNotFound(err)) {
+        return makeTextResult('No UK establishments are registered for this company.', {
+          items: [],
+        });
+      }
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── get_officer_disqualifications ───────────────────────────────────────
-const disqualificationsShape = {
-  officer_id: z.string().describe('Officer ID'),
-  is_corporate: z.boolean().default(false).describe('Whether the officer is a corporate entity'),
-};
-const disqualificationsSchema = z.object(disqualificationsShape);
+const disqualificationsSchema = z.object({
+  officer_id: officerIdSchema,
+  is_corporate: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Set true for a corporate officer. Default false queries the natural-person register.'
+    ),
+});
 
 registerTool({
   name: 'get_officer_disqualifications',
+  title: 'Get Officer Disqualifications',
   description:
-    'Check if an officer has been disqualified from acting as a company director. Returns disqualification details including reason, duration, court name, and associated companies.',
-  inputSchema: disqualificationsShape,
+    'Look up an officer id in the Companies House register of disqualified directors and return any disqualification with its dates, statutory reason, court and the companies named. An empty result means no disqualification is recorded against that officer id — it is not a confirmation that the person has never been disqualified, since the same individual can appear under more than one id.',
+  inputSchema: disqualificationsSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'people',
   async execute(client: APIClient, params: unknown) {
     const input = disqualificationsSchema.parse(params);
+    const emptyMessage =
+      'No disqualification is recorded against this officer id. That is not a confirmation that the person has never been disqualified — check other officer ids for the same individual if it matters.';
     try {
       const result = input.is_corporate
         ? await getCorporateDisqualification(client, input.officer_id)
         : await getNaturalDisqualification(client, input.officer_id);
 
       if (!result.disqualifications?.length) {
-        return makeTextResult('No disqualifications found for this officer.', {});
+        return makeTextResult(emptyMessage, { disqualifications: [] });
       }
 
-      const lines: string[] = ['## Officer Disqualifications\n'];
+      const lines: string[] = ['## Disqualifications', ''];
       if (result.forename || result.surname) {
-        lines.push(`**Name:** ${[result.title, result.forename, result.other_forenames, result.surname].filter(Boolean).join(' ')}`);
+        lines.push(
+          `**Name:** ${[result.title, result.forename, result.other_forenames, result.surname].filter(Boolean).join(' ')}`,
+          ''
+        );
       }
-      for (const disq of result.disqualifications) {
-        lines.push(`\n### Disqualification`);
-        lines.push(`- **From:** ${formatDate(disq.disqualified_from)}`);
-        lines.push(`- **Until:** ${formatDate(disq.disqualified_until)}`);
-        if (disq.reason) {
-          lines.push(`- **Reason:** ${disq.reason.description_identifier ?? disq.reason.act} ${disq.reason.section}`);
+      for (const disqualification of result.disqualifications) {
+        lines.push('### Disqualification');
+        lines.push(`- **From:** ${formatDate(disqualification.disqualified_from)}`);
+        lines.push(`- **Until:** ${formatDate(disqualification.disqualified_until)}`);
+        if (disqualification.reason) {
+          lines.push(
+            `- **Reason:** ${[disqualification.reason.description_identifier ?? disqualification.reason.act, disqualification.reason.section].filter(Boolean).join(' ')}`
+          );
         }
-        if (disq.court_name) lines.push(`- **Court:** ${disq.court_name}`);
-        if (disq.heard_on) lines.push(`- **Heard:** ${formatDate(disq.heard_on)}`);
-        if (disq.address) lines.push(`- **Address:** ${formatAddress(disq.address)}`);
-        if (disq.company_names?.length) {
-          lines.push(`- **Companies:** ${disq.company_names.join(', ')}`);
+        if (disqualification.court_name) lines.push(`- **Court:** ${disqualification.court_name}`);
+        if (disqualification.heard_on) {
+          lines.push(`- **Heard:** ${formatDate(disqualification.heard_on)}`);
         }
+        if (disqualification.address) {
+          lines.push(`- **Address:** ${formatAddress(disqualification.address)}`);
+        }
+        if (disqualification.company_names?.length) {
+          lines.push(`- **Companies named:** ${disqualification.company_names.join(', ')}`);
+        }
+        lines.push('');
       }
       return makeTextResult(lines.join('\n'), result as unknown as Record<string, unknown>);
     } catch (err) {
-      if ((err as { statusCode?: number }).statusCode === 404) {
-        return makeTextResult('No disqualifications found for this officer.', {});
+      if (isNotFound(err)) {
+        return makeTextResult(emptyMessage, { disqualifications: [] });
       }
-      return makeErrorResult((err as Error).message);
+      return makeErrorResult(err);
     }
   },
 });
 
 // ── get_filing_document ─────────────────────────────────────────────────
-const filingDocShape = {
-  company_number: z.string().describe('Companies House company number'),
-  transaction_id: z.string().describe('Filing transaction ID (from get_filings)'),
-};
-const filingDocSchema = z.object(filingDocShape);
+const filingDocSchema = z.object({
+  company_number: companyNumberSchema,
+  transaction_id: z
+    .string()
+    .min(1)
+    .describe('Transaction id of a single filing, taken from get_filings results.'),
+});
 
 registerTool({
   name: 'get_filing_document',
+  title: 'Get Filing Details',
   description:
-    'Get metadata and details for a specific filing document. Use the transaction_id from get_filings results.',
-  inputSchema: filingDocShape,
+    'Read the full detail of one filing by its transaction id: description, date, category, type, page count and the document id needed to retrieve the document itself. This returns the filing record, not the filed document — use download_filing_document for the document.',
+  inputSchema: filingDocSchema,
   annotations: TOOL_ANNOTATIONS,
+  group: 'filings',
   async execute(client: APIClient, params: unknown) {
     const input = filingDocSchema.parse(params);
     try {
-      const result = await getFilingItem(client, input.company_number, input.transaction_id);
-      const lines: string[] = ['## Filing Document\n'];
-      const items = Array.isArray(result.items) ? result.items : [result];
-      for (const item of items) {
-        if ('description' in item) {
-          lines.push(`**Description:** ${item.description}`);
-        }
-        if ('date' in item) {
-          lines.push(`**Date:** ${formatDate(item.date as string)}`);
-        }
-        if ('category' in item) {
-          lines.push(`**Category:** ${item.category}`);
-        }
-        if ('type' in item) {
-          lines.push(`**Type:** ${item.type}`);
+      const filing = await getFilingItem(client, input.company_number, input.transaction_id);
+      const documentId = filingDocumentId(filing);
+
+      const lines: string[] = [`## ${filing.description ?? 'Filing'}`, ''];
+      if (filing.date) lines.push(`- **Date:** ${formatDate(filing.date)}`);
+      if (filing.category) lines.push(`- **Category:** ${filing.category}`);
+      if (filing.type) lines.push(`- **Type:** ${filing.type}`);
+      if (filing.transaction_id) lines.push(`- **Transaction ID:** ${filing.transaction_id}`);
+      if (filing.pages) lines.push(`- **Pages:** ${filing.pages}`);
+      if (filing.paper_filed) lines.push('- **Paper filed:** yes');
+      lines.push(
+        documentId
+          ? `- **Document ID:** ${documentId} — pass this to download_filing_document.`
+          : '- **Document:** no document is held for this filing.'
+      );
+
+      if (filing.associated_filings?.length) {
+        lines.push('', '### Associated filings', '');
+        for (const associated of filing.associated_filings) {
+          lines.push(`- ${associated.description} (${formatDate(associated.date)})`);
         }
       }
-      return makeTextResult(lines.join('\n'), result as unknown as Record<string, unknown>);
+
+      return makeTextResult(lines.join('\n'), {
+        ...(filing as unknown as Record<string, unknown>),
+        ...(documentId ? { document_id: documentId } : {}),
+      });
     } catch (err) {
-      return makeErrorResult((err as Error).message);
+      if (isNotFound(err)) {
+        return makeErrorResult(err, {
+          prefix: 'No filing matches that transaction id.',
+          notFoundSuffix: 'Use get_filings to list valid transaction ids for this company.',
+        });
+      }
+      return makeErrorResult(err);
     }
   },
 });

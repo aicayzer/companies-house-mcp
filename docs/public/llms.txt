@@ -1,54 +1,89 @@
-# Companies House CLI & MCP
+# Companies House CLI and MCP
 
-> UK Companies House API tools. CLI binary and MCP server for company search, profiles, officers, filings, charges, insolvency, ownership, and due diligence.
+> An unofficial CLI and MCP server for the UK Companies House public register. 18 tools covering company search, company records, officers, ownership, filings, documents and combined summaries. Bring your own free API key.
 
 ## Packages
 
-- [companies-house-cli](https://www.npmjs.com/package/companies-house-cli): CLI binary (`ch`) for terminal access — install globally with `npm install -g companies-house-cli`
-- [companies-house-mcp](https://www.npmjs.com/package/companies-house-mcp): MCP server for Claude, Cursor, Zed, and other AI tools — run with `npx -y companies-house-mcp`
+- companies-house-cli (https://www.npmjs.com/package/companies-house-cli): the `ch` command for the terminal. `npm install -g companies-house-cli`
+- companies-house-mcp (https://www.npmjs.com/package/companies-house-mcp): the MCP server for Claude Code, Claude Desktop, Codex, Cursor, Zed and other MCP clients. `npx -y companies-house-mcp`
 
 ## API key
 
-Free key from https://developer.company-information.service.gov.uk/ — required by both packages.
+Every user supplies their own free key from https://developer.company-information.service.gov.uk/. There is no shared key, no hosted backend and no proxy. Requests go from your machine, or from a server you deployed yourself, straight to Companies House.
 
 ## Tools
 
-- search_companies — search UK companies by name, status, type, SIC code, or location
-- search_officers — search for company officers by name
-- get_company_profile — company status, registered addresses, SIC codes, accounts and confirmation statement dates
-- get_officers — current and resigned directors, secretaries, and other officers
-- get_appointments — all appointments held by a specific officer across all companies
-- get_ownership — persons with significant control (PSCs) and corporate ownership structure
-- get_filings — filing history with document metadata and download links
-- get_filing_document — retrieve a specific filing document by company number and transaction ID
-- get_charges — charges and mortgages registered against the company
-- get_insolvency — insolvency proceedings, liquidations, and administrations
-- get_company_registers — statutory registers (members, directors, secretaries, charges)
-- get_exemptions — disclosure exemptions held by the company
-- get_uk_establishments — UK establishments of overseas companies
-- get_officer_disqualifications — disqualification orders made against an officer
-- company_report — full company overview combining profile, officers, ownership, charges, filings, and insolvency in a single call
-- due_diligence_check — automated red-flag scan with HIGH/MEDIUM/LOW severity ratings across status, officers, ownership, charges, and insolvency
-- officer_network — map a director's connections across all UK companies they are or were associated with
+### Search
+
+- search_companies — Find UK companies by name and return their company numbers
+- search_officers — Find company officers by name across the whole UK register
+
+### Company record
+
+- get_charges — List the charges — mortgages, debentures and other security — registered against a UK company, with the persons entitled, creation and delivery dates, particulars and satisfaction status
+- get_company_profile — Read the Companies House register entry for one UK company: registered name, number, status and status detail, company type, incorporation date, registered office address, SIC codes, accounts and confirmation statement dates, and previous names
+- get_company_registers — Report where a company keeps its statutory registers of directors, secretaries, members and PSCs — at Companies House or at its own address
+- get_exemptions — List the disclosure exemptions recorded for a UK company, with the dates each applies from and to
+- get_insolvency — Read the insolvency record for a UK company: cases, case type, key dates, appointed practitioners and notes
+- get_uk_establishments — List the UK establishments registered by an overseas company — its UK branches, each with its own company number and status
+
+### Officers and ownership
+
+- get_appointments — List every company appointment held by one officer id, current and past, with the company name, number, status, role and dates
+- get_officer_disqualifications — Look up an officer id in the Companies House register of disqualified directors and return any disqualification with its dates, statutory reason, court and the companies named
+- get_officers — List a company's officers — directors, secretaries, LLP members and equivalents — with role, appointment date, resignation date, nationality, occupation and service address
+- get_ownership — List the persons with significant control (PSCs) recorded for a UK company — the individuals, corporate entities and legal persons that own or control it — with natures of control, notified date and ceased date
+
+### Filings and documents
+
+- download_filing_document — Retrieve the document filed for a Companies House filing and return it to you directly — PDF and other binary formats as an embedded binary resource, XHTML, XML and JSON as text
+- get_filing_document — Read the full detail of one filing by its transaction id: description, date, category, type, page count and the document id needed to retrieve the document itself
+- get_filings — Read a company's filing history: accounts, confirmation statements, officer changes, charge registrations, resolutions and everything else it has filed
+
+### Combined summaries
+
+- company_report — Read the main Companies House records for one company in a single call: profile, officers currently in post, persons with significant control, charges, the most recent filings and any insolvency record
+- due_diligence_check — Screen one company against what is recorded on the Companies House public register and report the entries a reviewer would want to look at: register status and status detail, insolvency records, outstanding charges, overdue accounts and confirmation statements, registered office disputes, officer changes, ownership records and company age
+- officer_network — Map every company one officer id is or was appointed to, split into current and past appointments with each company's status
 
 ## CLI commands
 
 ```
-ch search <query>
-ch profile <company-number>
-ch officers <company-number>
-ch ownership <company-number>
-ch filings <company-number>
-ch charges <company-number>
-ch insolvency <company-number>
-ch report <company-number>
-ch check <company-number>
-ch network <officer-name>
-ch search-officers <query>
-ch config set-key <key>
-ch config show
-ch serve
+ch search             Find companies by name
+ch search-officers    Find officers by name across the register
+ch profile            Read a company record
+ch officers           List company officers
+ch appointments       List one officer's appointments
+ch ownership          List persons with significant control
+ch filings            Read filing history
+ch filing             Read one filing in detail
+ch document           Download the document behind a filing
+ch charges            List registered charges
+ch insolvency         Read the insolvency record
+ch registers          Show where statutory registers are held
+ch exemptions         List disclosure exemptions
+ch establishments     List UK establishments of an overseas company
+ch disqualifications  Check the disqualified directors register
+ch report             Read the main records for one company in one call
+ch check              Screen a company against the public register
+ch network            Map an officer's appointments across companies
+ch serve              Run the MCP server (stdio, or --http for Streamable HTTP)
+ch config             Manage the saved API key
+ch tools              List the MCP tools this build exposes
 ```
+
+Output modes: default terminal formatting, --md for markdown, --json for the structured payload.
+
+## Transports and clients
+
+- stdio: the default and the recommended setup for every local client.
+- Streamable HTTP: for local use, or for a remote server you deploy yourself. Binds to 127.0.0.1 by default; any other binding requires MCP_BEARER_TOKEN.
+- Protocol: the 2026-07-28 revision, with the legacy handshake era still served for older clients.
+- Remote: an optional Cloudflare Worker you deploy into your own account, protected by your own bearer token. Claude Code, Cursor and VS Code support this. Claude.ai and Claude Desktop custom connectors do not, because their generally available authentication is OAuth, which this project does not implement.
+
+## Limits
+
+Data comes from the Companies House public register. Companies House performs basic completeness checks on filings but does not verify their accuracy. Nothing here is a verification, credit check, sanctions or politically-exposed-person screening, or a clearance decision. This project is not affiliated with Companies House.
 
 ## Source
 

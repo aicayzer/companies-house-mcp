@@ -20,8 +20,18 @@ export interface PreviousCompanyName {
 
 export interface AccountsDates {
   accounting_reference_date?: { month: string; day: string };
-  last_accounts?: { made_up_to?: string; type?: string; period_start_on?: string; period_end_on?: string };
-  next_accounts?: { due_on?: string; period_start_on?: string; period_end_on?: string; overdue?: boolean };
+  last_accounts?: {
+    made_up_to?: string;
+    type?: string;
+    period_start_on?: string;
+    period_end_on?: string;
+  };
+  next_accounts?: {
+    due_on?: string;
+    period_start_on?: string;
+    period_end_on?: string;
+    overdue?: boolean;
+  };
   next_due?: string;
   next_made_up_to?: string;
   overdue?: boolean;
@@ -232,9 +242,20 @@ export interface Charge {
   created_on?: string;
   delivered_on?: string;
   satisfied_on?: string;
-  particulars?: { type?: string; description?: string; contains_negative_pledge?: boolean; contains_fixed_charge?: boolean; contains_floating_charge?: boolean; floating_charge_covers_all?: boolean };
+  particulars?: {
+    type?: string;
+    description?: string;
+    contains_negative_pledge?: boolean;
+    contains_fixed_charge?: boolean;
+    contains_floating_charge?: boolean;
+    floating_charge_covers_all?: boolean;
+  };
   persons_entitled?: Array<{ name: string }>;
-  transactions?: Array<{ filing_type?: string; delivered_on?: string; links?: Record<string, string> }>;
+  transactions?: Array<{
+    filing_type?: string;
+    delivered_on?: string;
+    links?: Record<string, string>;
+  }>;
   links?: Record<string, string>;
   etag?: string;
 }
@@ -299,6 +320,30 @@ export interface PSCList {
   links?: { self?: string; persons_with_significant_control_statements_list?: string };
 }
 
+/**
+ * A statement filed in place of a PSC entry — for example that the company
+ * knows of no person with significant control, or that enquiries are ongoing.
+ */
+export interface PSCStatement {
+  statement: string;
+  notified_on?: string;
+  ceased_on?: string;
+  kind?: string;
+  links?: Record<string, string>;
+  etag?: string;
+}
+
+export interface PSCStatementList {
+  items: PSCStatement[];
+  items_per_page: number;
+  kind?: string;
+  start_index: number;
+  total_results: number;
+  active_count?: number;
+  ceased_count?: number;
+  links?: Record<string, string>;
+}
+
 export interface InsolvencyCase {
   number?: number;
   type?: string;
@@ -323,27 +368,33 @@ export interface InsolvencyData {
 export interface CompanyRegisters {
   company_number?: string;
   kind?: string;
-  registers?: Record<string, {
-    register_type: string;
-    items: Array<{
-      register_moved_to: string;
-      moved_on: string;
+  registers?: Record<
+    string,
+    {
+      register_type: string;
+      items: Array<{
+        register_moved_to: string;
+        moved_on: string;
+        links?: Record<string, string>;
+      }>;
       links?: Record<string, string>;
-    }>;
-    links?: Record<string, string>;
-  }>;
+    }
+  >;
   links?: Record<string, string>;
   etag?: string;
 }
 
 export interface ExemptionsData {
-  exemptions?: Record<string, {
-    exemption_type: string;
-    items: Array<{
-      exempt_from: string;
-      exempt_to?: string;
-    }>;
-  }>;
+  exemptions?: Record<
+    string,
+    {
+      exemption_type: string;
+      items: Array<{
+        exempt_from: string;
+        exempt_to?: string;
+      }>;
+    }
+  >;
   kind?: string;
   links?: Record<string, string>;
   etag?: string;
@@ -390,14 +441,22 @@ export interface DisqualifiedOfficer {
 }
 
 export interface DocumentMetadata {
+  company_number?: string;
   barcode?: string;
+  category?: string;
+  /** Companies House's own name for the file, e.g. "14604577_cs01_2026-02-04". */
+  filename?: string;
   significant_date?: string;
   significant_date_type?: string;
   created_at?: string;
   etag?: string;
   links?: { self?: string; document?: string };
   pages?: number;
-  resources?: Record<string, { content_length: number; content_type: string; created_at: string; updated_at: string }>;
+  /** Keyed by media type. Only the types listed here can be requested. */
+  resources?: Record<
+    string,
+    { content_length?: number; content_type?: string; created_at?: string; updated_at?: string }
+  >;
   total_count?: number;
   updated_at?: string;
 }

@@ -1,0 +1,11 @@
+# Local development secrets for `wrangler dev`.
+# Copy to .dev.vars, which is gitignored, and fill in your own values.
+# Never commit .dev.vars.
+
+# Your own Companies House API key.
+# Free registration: https://developer.company-information.service.gov.uk/
+COMPANIES_HOUSE_API_KEY=your_companies_house_api_key
+
+# A long random string you invent. Clients must send it as a bearer token.
+# Generate one: openssl rand -hex 32
+MCP_BEARER_TOKEN=your_long_random_bearer_token

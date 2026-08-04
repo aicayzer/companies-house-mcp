@@ -9,17 +9,18 @@ You have access to the `companies-house` MCP server, which provides tools for qu
 
 **Start broad, go deep:**
 
-1. **Find the company** — Use `search_companies` to find the company number. UK company numbers are 8 digits, zero-padded (e.g., `00445790`). Scottish companies start with `SC`, Northern Irish with `NI`, LLPs with `OC`.
+1. **Find the company** — Use `search_companies` to get the company number. Numbers are eight characters, zero-padded (`00445790`). Scotland uses `SC`, Northern Ireland `NI`, LLPs `OC`, overseas companies `FC`. Shorter all-digit numbers are padded automatically.
 
-2. **Get the overview** — Use `company_report` for a comprehensive view in one call. This returns profile, officers, PSCs, charges, filings, and insolvency status. This is the best starting point for most requests.
+2. **Get the overview** — Use `company_report`. One call returns the profile, officers in post, PSCs, charges, recent filings and any insolvency record, plus a coverage section saying how much of each list it retrieved. Start here for most requests.
 
 3. **Go deeper as needed:**
-   - Ownership questions → `get_ownership`
-   - Officer history → `get_appointments` (with officer ID from officers list)
-   - Director network → `officer_network` (finds all companies a person directs)
-   - Financial health → `due_diligence_check` (automated red-flag scanner)
-   - Specific filings → `get_filings` with category filter
-   - Charges detail → `get_charges`
+   - Ownership → `get_ownership`
+   - One officer's history → `get_appointments` with the officer id
+   - An officer across companies → `officer_network`
+   - What is on the register that a reviewer should look at → `due_diligence_check`
+   - Specific filings → `get_filings` with a category
+   - Charge detail → `get_charges`
+   - The filed document itself → `download_filing_document`
 
 ## Available Tools
 
@@ -28,20 +29,21 @@ You have access to the `companies-house` MCP server, which provides tools for qu
 | `search_companies` | Finding a company by name. Supports filters: status, type, SIC code, location, incorporation date. |
 | `search_officers` | Finding a person across all companies. Returns officer IDs for deeper queries. |
 | `get_company_profile` | Getting detailed profile for a known company number. |
-| `get_officers` | Listing directors/secretaries. Use `include_resigned: true` for full history. |
+| `get_officers` | Listing directors and secretaries. Returns officers in post by default; `include_resigned: true` for the full history. |
 | `get_appointments` | Seeing all companies an officer is/was associated with. Needs officer ID. |
 | `get_ownership` | PSCs — who owns/controls the company. Individual, corporate, and legal person PSCs. |
 | `get_filings` | Filing history. Filter by category: accounts, officers, mortgage, capital, etc. |
 | `get_charges` | Mortgages/debentures. Outstanding vs satisfied charges. |
 | `get_insolvency` | Insolvency cases, practitioners, proceedings. |
-| `company_report` | **Recommended starting point.** One call returns profile + officers + PSCs + charges + filings + insolvency. |
-| `due_diligence_check` | Automated red-flag scan. Checks status, accounts, confirmation statement, charges, insolvency, officers, PSCs. |
+| `company_report` | **Recommended starting point.** One call returns profile, officers in post, PSCs, charges, recent filings and insolvency, with a coverage statement. |
+| `due_diligence_check` | Screening summary of the public register. Reports observations, the checks it ran, the checks it could not run, and what the register cannot establish. Not a verdict. |
 | `officer_network` | Map all appointments for an officer. Takes name or officer ID. |
 | `get_company_registers` | Where the company keeps its statutory registers. |
 | `get_exemptions` | Company exemptions (rare). |
 | `get_uk_establishments` | UK branches of overseas companies. |
-| `get_officer_disqualifications` | Check if someone is disqualified from being a director. |
+| `get_officer_disqualifications` | Look up one officer id in the disqualified directors register. An empty result is not proof the person was never disqualified. |
 | `get_filing_document` | Metadata for a specific filing (needs transaction ID from `get_filings`). |
+| `download_filing_document` | Retrieve the filed document itself. Returns it as an attached resource; `metadata_only` inspects size and formats first. |
 
 ## Company Number Formats
 
@@ -98,26 +100,29 @@ Use with `get_filings` category parameter:
 - `resolution` — Shareholder resolutions
 - `miscellaneous` — Everything else
 
-## Due Diligence Interpretation
+## Interpreting `due_diligence_check`
 
-When `due_diligence_check` returns flags:
+It returns `observations` (things on the register worth a look), `checks_performed` (including any it could not run), and `coverage` (how much of each list it read). There is no overall verdict, and there must not be one in your summary either.
 
-**High severity — investigate further:**
-- Company dissolved/in liquidation/in administration
-- Insolvency history or active proceedings
-- Accounts overdue (company may be non-compliant)
-- No active officers
+**Higher significance — worth investigating:**
+- Register status of dissolved, liquidation, administration or receivership
+- A status detail of `active-proposal-to-strike-off`, which can appear on a company the register still shows as active
+- Insolvency cases on record
+- Accounts overdue
+- No officers in post for a company shown as active
 
-**Medium severity — worth noting:**
-- Outstanding charges (normal for companies with bank lending)
+**Moderate — worth noting, rarely conclusive:**
+- Outstanding charges. Ordinary for any company with bank lending, and a charge says nothing about the balance owed
 - Confirmation statement overdue
-- Officers recently resigned
-- Registered office undeliverable or in dispute
-- No PSCs registered for an active company
+- Officers resigned recently
+- Registered office in dispute or undeliverable
+- No PSC entry, exemption or statement for a company shown as active
 
-**Low severity — informational:**
-- Company less than one year old
-- Sole director (common for small companies)
+**Contextual:**
+- Incorporated less than a year ago
+- One officer in post, common for small companies
+
+**How to report it.** Say what is on the register and what was not checked. Never say a company is clear, sound, in good standing, low risk, or verified. Companies House does not verify what companies file, so an absence of adverse entries means only that nothing adverse has been filed. If any check could not be performed, say so.
 
 ## Natures of Control (PSC)
 
@@ -261,6 +266,11 @@ gantt
 - The API returns dates as `YYYY-MM-DD` strings.
 - `get_officers` returns active only by default. Use `include_resigned: true` for full history.
 - PSC data may not be available for older companies or companies registered before the PSC regime (2016).
-- Some endpoints return 404 for valid companies that simply don't have the relevant data (e.g., insolvency for a healthy company). This is normal, not an error.
-- Officer IDs are embedded in `links.self` paths: `/officers/{OFFICER_ID}/appointments`.
-- For large companies (e.g., Tesco), officer lists can be very long. Use pagination.
+- Some endpoints return no record for a valid company that simply has no data of that kind — insolvency for a solvent company, charges for one that never borrowed. The tools report this as an absence, not an error.
+- Officer ids are embedded in `links.self` paths: `/officers/{OFFICER_ID}/appointments`.
+- An officer id identifies one person *as recorded*. The same individual can hold more than one id, so an appointment list may not be everything they hold.
+- Ceased PSCs stay in the PSC list. Check `ceased_on` before describing anyone as a current controller.
+- An empty PSC register is often explained: a company trading on a regulated market is exempt, and others file a statement instead. `get_ownership` says which applies rather than leaving it looking like a gap.
+- Outstanding charge counts come from the API's aggregate totals, so they stay right for companies with more charges than fit on one page.
+- Every list result tells you where you are in it and how to request the next page. Use that rather than assuming one page is the whole list.
+- `officer_network` refuses to guess between same-named officers. If it reports several matches, pick one and call it again with `officer_id`.

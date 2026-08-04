@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Companies House
   text: CLI and MCP
-  tagline: Free UK company data. No backend, no subscriptions, no middleman.
+  tagline: Read the UK public register from your terminal or your AI assistant. Your own key, no hosted backend.
   image:
     light: /uk-outline-light.png
     dark: /uk-outline-dark.png
@@ -23,14 +23,14 @@ hero:
 features:
   - icon: '>_'
     title: CLI
-    details: The `ch` command. Search companies, pull reports, pipe to `jq`, or save as Markdown.
+    details: The `ch` command. Search the register, pull a report, pipe it to `jq`, or save it as Markdown.
   - icon: '{}'
     title: MCP server
-    details: Connect Claude, Cursor, Zed, or any MCP client to live UK company data.
-  - icon: '?!'
-    title: Due diligence
-    details: Automated red-flag scan. Status, insolvency, charges, overdue filings — severity rated.
-  - icon: '→'
-    title: Officer networks
-    details: Map a director across every company they have ever been associated with.
+    details: Connect Claude Code, Claude Desktop, Codex, Cursor or Zed to 18 tools backed by your own API key.
+  - icon: '[]'
+    title: Filed documents
+    details: Retrieve the filed PDF itself, not just its metadata, and get it back wherever the server runs.
+  - icon: '?'
+    title: Honest summaries
+    details: Screening output states what it found, what it could not check, and what the register cannot establish.
 ---
