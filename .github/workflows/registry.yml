@@ -42,6 +42,14 @@ jobs:
             echo "::error::server.json version does not match companies-house-mcp. The registry would advertise a version that was never published."
             exit 1
           fi
+          # The registry caps the description at 100 characters and rejects the
+          # whole publish when it is longer, so catch it before the upload.
+          DESCRIPTION_LENGTH=$(node -p "require('./server.json').description.length")
+          echo "description: $DESCRIPTION_LENGTH characters"
+          if [ "$DESCRIPTION_LENGTH" -gt 100 ]; then
+            echo "::error::server.json description is $DESCRIPTION_LENGTH characters; the registry allows 100."
+            exit 1
+          fi
 
       - name: Authenticate and publish
         run: |
