@@ -143,6 +143,14 @@ There is no download-directory variable. `download_filing_document` returns the 
 
 The removed custom OAuth variables — `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, `MCP_PUBLIC_URL` — now cause startup to fail with migration guidance rather than quietly restoring an unsafe boundary.
 
+## Several clients at once
+
+Each stdio client session starts its own copy of the server. Running Claude Code, Claude Desktop and Codex side by side, with a few sessions each, means several copies. That is expected: every copy exits when its session closes.
+
+The copies do not share state. Each has its own cache and rate limiter, but they all spend the same API key's allowance, which Companies House sets at 600 requests per five minutes. Heavy parallel use across many sessions can therefore still meet a 429, which the server reports rather than hides.
+
+Pin the same major version in every client, for example `npx -y companies-house-mcp@4`, so they pick up fixes together and never move to a new major version unannounced.
+
 ## Remote servers
 
 You can deploy your own remote server as a Cloudflare Worker in your own account, with your own API key and your own bearer token. See [self-hosting](/self-hosting).
