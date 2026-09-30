@@ -1,6 +1,6 @@
 {
   "name": "companies-house-cli",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "CLI for the UK Companies House public register — company search, records, officers, ownership, filings and filed documents. Bring your own free API key.",
   "type": "module",
   "exports": {

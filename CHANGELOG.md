@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## companies-house-cli [2.0.1] / companies-house-mcp [4.0.1] - 2026-09-30
+
+### Security
+- **Hono 4.13** - the HTTP transport's `hono` dependency moves to 4.13.12, clearing three moderate advisories fixed in 4.13.5. Production dependencies now audit clean.
+
+### Changed
+- **Dependencies** - `zod` 4.6, MCP SDK 2.2, and development tooling on ESLint 10, TypeScript 6.0, Vitest 5 and current Wrangler. TypeScript stays on 6.0 until typescript-eslint supports later versions.
+- **CI** - GitHub Actions move to their current major versions, which run on Node 24 natively, and Dependabot now opens grouped weekly update PRs.
+
+### Documentation
+- **Several clients at once** - the MCP guide explains that each client session runs its own server, that all copies share one API key's rate limit, and recommends pinning the same major version everywhere.
+
+---
+
 ## companies-house-cli [2.0.0] / companies-house-mcp [4.0.0] — 2026-08-04
 
 ### Added
