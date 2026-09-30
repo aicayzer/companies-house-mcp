@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client, type VersionNegotiationOptions } from '@modelcontextprotocol/client';
@@ -7,6 +8,12 @@ import { describe, expect, it } from 'vitest';
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const cliEntryPoint = resolve(testDirectory, '../dist/cli/index.js');
 const mcpEntryPoint = resolve(testDirectory, '../../mcp/dist/index.js');
+
+// Each entry point must report its own package's version, whatever the release.
+const packageVersion = (path: string): string =>
+  (JSON.parse(readFileSync(resolve(testDirectory, path), 'utf8')) as { version: string }).version;
+const cliVersion = packageVersion('../package.json');
+const mcpVersion = packageVersion('../../mcp/package.json');
 
 async function inspectPackagedServer(
   entryPoint: string,
@@ -44,11 +51,11 @@ describe('packaged stdio entry points', () => {
   it.each([
     ['legacy', 'legacy'],
     ['2026-07-28', { pin: '2026-07-28' }],
-  ] as const)('reports MCP wrapper 4.0.0 over %s', async (_label, mode) => {
-    await inspectPackagedServer(mcpEntryPoint, [], '4.0.0', mode);
+  ] as const)(`reports MCP wrapper ${mcpVersion} over %s`, async (_label, mode) => {
+    await inspectPackagedServer(mcpEntryPoint, [], mcpVersion, mode);
   });
 
-  it('reports CLI 2.0.0 over 2026-07-28', async () => {
-    await inspectPackagedServer(cliEntryPoint, ['serve'], '2.0.0', { pin: '2026-07-28' });
+  it(`reports CLI ${cliVersion} over 2026-07-28`, async () => {
+    await inspectPackagedServer(cliEntryPoint, ['serve'], cliVersion, { pin: '2026-07-28' });
   });
 });
