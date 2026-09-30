@@ -5,6 +5,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Dependabot resolves with pnpm 11, which refuses versions younger than a
+    # day, so a fresh release fails the whole run. Wait a few days instead.
+    cooldown:
+      default-days: 3
     groups:
       production:
         dependency-type: production
