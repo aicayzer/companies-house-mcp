@@ -5,7 +5,6 @@ on:
   push:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # The Worker build runs `wrangler deploy --dry-run`, which needs no
   # Cloudflare credentials. Telemetry is off so CI stays quiet.
   WRANGLER_SEND_METRICS: false
@@ -17,15 +16,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         # No `version:` here on purpose. package.json's `packageManager` field
         # pins the exact version, and action-setup errors out if both are set.
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'pnpm'
