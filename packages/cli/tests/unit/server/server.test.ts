@@ -173,7 +173,7 @@ describe('server authentication helpers', () => {
   });
 });
 
-describe.sequential('HTTP server boundary', () => {
+describe('HTTP server boundary', { concurrent: false }, () => {
   let runningServer: RunningServer | undefined;
 
   afterEach(async () => {
@@ -310,7 +310,7 @@ describe.sequential('HTTP server boundary', () => {
   });
 });
 
-describe.sequential('stdio protocol compatibility', () => {
+describe('stdio protocol compatibility', { concurrent: false }, () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });

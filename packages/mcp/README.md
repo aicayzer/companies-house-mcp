@@ -146,7 +146,7 @@ npm install -g companies-house-cli
 ch report 00445790
 ```
 
-From v3.0.0 this package is a thin wrapper over that one. Existing `npx -y companies-house-mcp` configs work unchanged.
+This package is a thin wrapper that starts that package's MCP server over stdio.
 
 ## Disclaimer
 

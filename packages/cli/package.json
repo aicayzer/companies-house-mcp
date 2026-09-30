@@ -1,6 +1,6 @@
 {
   "name": "companies-house-cli",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "CLI for the UK Companies House public register — company search, records, officers, ownership, filings and filed documents. Bring your own free API key.",
   "type": "module",
   "exports": {
@@ -57,21 +57,21 @@
     "url": "https://github.com/aicayzer/companies-house-mcp/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/node": "^2.0.0",
-    "@modelcontextprotocol/server": "^2.0.0",
-    "hono": "^4.12.25",
-    "zod": "^4.4.3"
+    "@modelcontextprotocol/node": "^2.1.0",
+    "@modelcontextprotocol/server": "^2.2.0",
+    "hono": "^4.13.12",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.2.0",
     "@types/node": "^22.20.1",
-    "@typescript-eslint/eslint-plugin": "^8.66.0",
-    "@typescript-eslint/parser": "^8.66.0",
-    "eslint": "^9.39.5",
-    "globals": "^14.0.0",
-    "prettier": "^3.9.6",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.7"
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
+    "@typescript-eslint/parser": "^8.71.0",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.3"
   },
   "files": [
     "dist/",

@@ -1,6 +1,6 @@
 {
   "name": "companies-house-mcp",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "MCP server for the UK Companies House public register — connects Claude, Codex, Cursor, Zed and other MCP clients to live company data. Bring your own free API key.",
   "type": "module",
   "mcpName": "io.github.aicayzer/companies-house",
@@ -42,16 +42,16 @@
     "url": "https://github.com/aicayzer/companies-house-mcp/issues"
   },
   "dependencies": {
-    "companies-house-cli": "workspace:^2.0.0"
+    "companies-house-cli": "workspace:^2.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "@typescript-eslint/eslint-plugin": "^8.66.0",
-    "@typescript-eslint/parser": "^8.66.0",
-    "eslint": "^9.39.5",
-    "globals": "^14.0.0",
-    "prettier": "^3.9.6",
-    "typescript": "^5.9.3"
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
+    "@typescript-eslint/parser": "^8.71.0",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3"
   },
   "files": [
     "dist/",

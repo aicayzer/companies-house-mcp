@@ -1,0 +1,27 @@
+# Weekly, grouped update PRs so dependencies do not drift between releases.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      production:
+        dependency-type: production
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Node 22 is the oldest supported runtime, so its types stay on the 22 line.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # typescript-eslint supports TypeScript below 6.1 only; lift this when it widens.
+      - dependency-name: typescript
+        versions: ['>=6.1.0']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

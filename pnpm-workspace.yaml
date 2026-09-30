@@ -13,3 +13,7 @@ allowBuilds:
 onlyBuiltDependencies:
   - esbuild
   - workerd
+
+overrides:
+  # VitePress 1.x pins an old postcss chain; 3.3.18 is the patched 3.x release.
+  nanoid@<3.3.18: ^3.3.18
