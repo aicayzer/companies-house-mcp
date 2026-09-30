@@ -48,6 +48,21 @@ jobs:
             exit 1
           fi
 
+      # This workflow starts alongside the npm publish, and the registry rejects
+      # a version npm does not serve yet. Wait for it rather than fail.
+      - name: Wait for the npm release
+        run: |
+          VERSION=$(node -p "require('./packages/mcp/package.json').version")
+          for attempt in $(seq 1 40); do
+            if npm view "companies-house-mcp@$VERSION" version >/dev/null 2>&1; then
+              echo "companies-house-mcp@$VERSION is on npm"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::companies-house-mcp@$VERSION is not on npm after 20 minutes. If the publish was staged, approve it on npmjs.com, then run this workflow again."
+          exit 1
+
       - name: Authenticate and publish
         run: |
           ./mcp-publisher login github-oidc
