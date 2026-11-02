@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://companies-house.uk/sitemap.xml
