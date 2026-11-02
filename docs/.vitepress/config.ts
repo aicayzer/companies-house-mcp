@@ -1,9 +1,26 @@
 import { defineConfig } from 'vitepress'
 
+const siteUrl = 'https://companies-house.uk'
+
 export default defineConfig({
   title: 'Companies House',
   description: 'CLI and MCP server for the UK Companies House API. Look up companies, officers, filings, charges, and ownership — from your terminal or any AI tool that speaks MCP.',
   lang: 'en-GB',
+  cleanUrls: true,
+
+  transformPageData(pageData) {
+    if (pageData.relativePath === '404.md') return
+
+    const path = pageData.relativePath
+      .replace(/(^|\/)index\.md$/, '$1')
+      .replace(/\.md$/, '')
+
+    pageData.frontmatter.head ??= []
+    pageData.frontmatter.head.push([
+      'link',
+      { rel: 'canonical', href: new URL(path, `${siteUrl}/`).href },
+    ])
+  },
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],
@@ -21,7 +38,7 @@ export default defineConfig({
   ],
 
   sitemap: {
-    hostname: 'https://companies-house.uk',
+    hostname: siteUrl,
   },
 
   themeConfig: {
