@@ -59,7 +59,7 @@
   "dependencies": {
     "@modelcontextprotocol/node": "^2.1.0",
     "@modelcontextprotocol/server": "^2.2.0",
-    "hono": "^4.13.12",
+    "hono": "^4.13.16",
     "zod": "^4.6.5"
   },
   "devDependencies": {
